@@ -79,7 +79,7 @@
  * Uncomment CONFIG_DAHDI_NET to enable SyncPPP, CiscoHDLC, and Frame Relay
  * support.
  */
-/* #define CONFIG_DAHDI_NET */
+#define CONFIG_DAHDI_NET
 
 /*
  * Uncomment for Generic PPP support (i.e. DAHDIRAS)
