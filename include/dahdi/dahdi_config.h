@@ -195,4 +195,7 @@
  */
 /* #define CONFIG_DAHDI_CONFLINK */
 
+#define CONFIG_DAHDI_DYNAMIC
+#define CONFIG_DAHDI_DYNAMIC_LOC
+
 #endif
