@@ -1794,20 +1794,24 @@ static int t4_hardware_stop(struct t4 *wc);
 static void t4_framer_reset(struct t4 *wc)
 {
 	const bool first_time = false;
+#ifdef VPM_SUPPORT
 	bool have_vpm = wc->vpm != NULL;
 	if (have_vpm) {
 		release_vpm450m(wc->vpm);
 		wc->vpm = NULL;
 	}
+#endif
 	t4_hardware_stop(wc);
 	__t4_set_sclk_src(wc, WC_SELF, 0, 0);
 	__t4_hardware_init_1(wc, wc->devtype->flags, first_time);
 	__t4_hardware_init_2(wc, first_time);
+#ifdef VPM_SUPPORT
 	if (have_vpm) {
 		t4_vpm_init(wc);
 		wc->dmactrl |= (wc->vpm) ? T4_VPM_PRESENT : 0;
 		t4_pci_out(wc, WC_DMACTRL, wc->dmactrl);
 	}
+#endif
 	setup_chunks(wc, 0);
 	wc->lastindex = 0;
 }
