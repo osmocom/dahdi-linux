@@ -3180,7 +3180,7 @@ static int __init te12xp_init(void)
 		kmem_cache_destroy(cmd_cache);
 		return -EINVAL;
 	}
-	res = dahdi_pci_module(&te12xp_driver);
+	res = pci_register_driver(&te12xp_driver);
 	if (res) {
 		kmem_cache_destroy(cmd_cache);
 		return -ENODEV;
