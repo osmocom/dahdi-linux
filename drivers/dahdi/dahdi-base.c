@@ -3891,6 +3891,23 @@ void dahdi_alarm_channel(struct dahdi_chan *chan, int alarms)
 		dahdi_qevent_nolock(chan, alarms ? DAHDI_EVENT_ALARM : DAHDI_EVENT_NOALARM);
 	}
 	spin_unlock_irqrestore(&chan->lock, flags);
+
+#ifdef CONFIG_DAHDI_NET
+	if (dahdi_have_netdev(chan)) {
+		struct net_device *dev = chan_to_netdev(chan);
+		/* we don't really care which alarm it is,
+		 * RED/YELLOW/BLUE/MFA/.. - they all mean that the link
+		 * was somehow lost, and that's what matters to the
+		 * netdev */
+		if (alarms) {
+			if (netif_carrier_ok(dev))
+				netif_carrier_off(dev);
+		} else {
+			if (!netif_carrier_ok(dev))
+				netif_carrier_on(dev);
+		}
+	}
+#endif
 }
 
 struct dahdi_span *get_master_span(void)
