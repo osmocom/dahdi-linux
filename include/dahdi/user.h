@@ -1025,6 +1025,14 @@ struct dahdi_dynamic_span {
  */
 #define DAHDI_DYNAMIC_DESTROY		_IOW(DAHDI_CODE, 81, struct dahdi_dynamic_span)
 
+
+struct dahdi_simulate_alarm {
+	int spanno;
+	int alarms;
+};
+/* simulate alarms on a dynamic span */
+#define DAHDI_SIMULATE_ALARM		_IOW(DAHDI_CODE, 82, struct dahdi_simulate_alarm)
+
 /*
  * Set the HW gain for a device
  */
