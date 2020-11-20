@@ -366,7 +366,7 @@ void dahdi_dynamic_receive(struct dahdi_span *span, unsigned char *msg, int msgl
 	rcu_read_unlock();
 
 	/* Check for Yellow alarm */
-	newalarm = span->alarms & ~(DAHDI_ALARM_YELLOW | DAHDI_ALARM_RED);
+	newalarm = dtd->simulated_alarms | (span->alarms & ~(DAHDI_ALARM_YELLOW | DAHDI_ALARM_RED));
 	if (sflags & DAHDI_DYNAMIC_FLAG_YELLOW_ALARM)
 		newalarm |= DAHDI_ALARM_YELLOW;
 
@@ -745,9 +745,31 @@ static void dahdi_dynamic_flush_tasklet(unsigned long data)
 }
 #endif
 
+static int simulate_alarm(const struct dahdi_simulate_alarm *dsa)
+{
+	struct dahdi_dynamic *d;
+
+	rcu_read_lock();
+
+	list_for_each_entry_rcu(d, &dspan_list, list) {
+		if (d->span.spanno == dsa->spanno) {
+			/* mask off old simulated alarms */
+			d->span.alarms &= ~d->simulated_alarms;
+			d->simulated_alarms = dsa->alarms;
+			/* mask in new simulated alarms */
+			d->span.alarms |= d->simulated_alarms;
+			dahdi_alarm_notify(&d->span);
+			return 0;
+		}
+	}
+
+	return -ENODEV;
+}
+
 static int dahdi_dynamic_ioctl(unsigned int cmd, unsigned long data)
 {
 	struct dahdi_dynamic_span dds;
+	struct dahdi_simulate_alarm dsa;
 	int res;
 	switch(cmd) {
 	case DAHDI_DYNAMIC_CREATE:
@@ -771,6 +793,11 @@ static int dahdi_dynamic_ioctl(unsigned int cmd, unsigned long data)
 		if (debug)
 			printk(KERN_DEBUG "Dynamic Destroy\n");
 		return destroy_dynamic(&dds);
+	case DAHDI_SIMULATE_ALARM:
+		if (copy_from_user(&dsa, (__user const void *)data,
+				   sizeof(dsa)))
+			return -EFAULT;
+		return simulate_alarm(&dsa);
 	}
 
 	return -ENOTTY;
@@ -839,7 +866,7 @@ static void check_for_red_alarm(TIMER_DATA_TYPE unused)
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(d, &dspan_list, list) {
-		newalarm = d->span.alarms & ~DAHDI_ALARM_RED;
+		newalarm = d->simulated_alarms | (d->span.alarms & ~DAHDI_ALARM_RED);
 		/* If nothing received for a second, consider that RED ALARM */
 		if ((jiffies - d->rxjif) > 1 * HZ) {
 			newalarm |= DAHDI_ALARM_RED;
