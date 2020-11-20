@@ -5591,6 +5591,7 @@ dahdi_ctl_ioctl(struct file *file, unsigned int cmd, unsigned long data)
 		return dahdi_ioctl_maint(data);
 	case DAHDI_DYNAMIC_CREATE:
 	case DAHDI_DYNAMIC_DESTROY:
+	case DAHDI_SIMULATE_ALARM:
 		return dahdi_ioctl_dynamic(cmd, data);
 	case DAHDI_EC_LICENSE_CHALLENGE:
 	case DAHDI_EC_LICENSE_RESPONSE:

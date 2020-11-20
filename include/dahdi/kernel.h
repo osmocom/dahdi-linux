@@ -1068,6 +1068,7 @@ struct dahdi_dynamic {
 	int master;
 	unsigned char *msgbuf;
 	struct device *dev;
+	int simulated_alarms;
 
 	struct list_head list;
 };
