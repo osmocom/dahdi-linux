@@ -311,7 +311,7 @@ static void iso_out_complete(struct urb *urb)
 	unsigned int i, j;
 	int rc;
 
-	dev_dbg(&ieu->usb_dev->dev, "OUT urb %p completion (%d) %d", urb, urb->status, urb->number_of_packets);
+	//dev_dbg(&ieu->usb_dev->dev, "OUT urb %p completion (%d) %d", urb, urb->status, urb->number_of_packets);
 
 	if (urb->status == 0) {
 		for (i = 0; i < urb->number_of_packets; i++) {
@@ -337,9 +337,9 @@ static void iso_out_complete(struct urb *urb)
 				ieu->r_acc = 0;
 
 			for (j = 0; j < fts; j++)
-				span_mux_one_frame(ieu, tx + j*32);
+				span_mux_one_frame(ieu, tx + 4 + j*32);
 
-			urb->iso_frame_desc[i].length = fts * 32;
+			urb->iso_frame_desc[i].length = 4 + fts * 32;
 		}
 	} else 
 		dev_err(&ieu->usb_dev->dev, "OUT urb %p completion (%d)", urb, urb->status);
@@ -350,11 +350,11 @@ static void iso_out_complete(struct urb *urb)
 
 	usb_anchor_urb(urb, &ieu->anchor.iso_out);
 	usb_mark_last_busy(ieu->usb_dev);
-
+#if 0
 	dev_dbg(&ieu->usb_dev->dev, "OUT submit len=(%d,%d,%d,%d)",
 		urb->iso_frame_desc[0].length, urb->iso_frame_desc[1].length,
 		urb->iso_frame_desc[2].length, urb->iso_frame_desc[3].length);
-
+#endif
 	rc = usb_submit_urb(urb, GFP_ATOMIC);
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
