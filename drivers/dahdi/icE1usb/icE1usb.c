@@ -31,9 +31,9 @@ struct ice1usb {
 	struct usb_device *usb_dev;
 	struct usb_interface *usb_intf;
 	/* altsetting for 'OFF' state */
-	struct usb_host_interface *alt_off;
+	const struct usb_host_interface *alt_off;
 	/* altsetting for 'ON' state */
-	struct usb_host_interface *alt_on;
+	const struct usb_host_interface *alt_on;
 	struct {
 		struct usb_anchor iso_in;
 		struct usb_anchor iso_out;
@@ -56,7 +56,7 @@ struct ice1usb {
 	struct {
 		struct dahdi_device *dev;
 		struct dahdi_span span;
-		struct dahdi_chan *chans[32];
+		struct dahdi_chan *chans[31];
 		/* [next rx byte] offset into chan[i]->readchunk */
 		unsigned int readchunk_idx;
 	} dahdi;
@@ -90,6 +90,12 @@ static int e1u_alloc_channels(struct ice1usb *ieu)
 			e1u_free_channels(ieu);
 			return -ENOMEM;
 		}
+
+		chan->pvt = ieu;
+		snprintf(chan->name, sizeof(chan->name)-1, "%s/%d",
+			 ieu->dahdi.span.name, i+1);
+		chan->chanpos = i+1;
+		chan->sigcap = DAHDI_SIG_CLEAR | DAHDI_SIG_MTP2 | DAHDI_SIG_SF;
 	}
 	return 0;
 }
@@ -166,7 +172,7 @@ static void process_rx_frame(struct ice1usb *ieu, const uint8_t *data)
 
 	for (i = 0; i < ARRAY_SIZE(ieu->dahdi.chans); i++) {
 		struct dahdi_chan *chan = ieu->dahdi.chans[i];
-		chan->readchunk[ieu->dahdi.readchunk_idx] = data[i];
+		chan->readchunk[ieu->dahdi.readchunk_idx] = data[1+i];
 	}
 	ieu->dahdi.readchunk_idx++;
 
@@ -263,6 +269,7 @@ static void iso_fb_complete(struct urb *urb)
 static void iso_out_complete(struct urb *urb)
 {
 	struct ice1usb *ieu = urb->context;
+	unsigned int i;
 	int rc;
 
 	if (urb->status == 0) {
@@ -410,7 +417,7 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 
 	for (i = 0; i < span->channels; i++) {
 		struct dahdi_chan *const chan = ieu->dahdi.chans[i];
-		chan->sigcap = DAHDI_SIG_MTP2 | DAHDI_SIG_SF;
+		chan->sigcap = DAHDI_SIG_CLEAR | DAHDI_SIG_MTP2 | DAHDI_SIG_SF;
 	}
 
 	/* If we're already running, then go ahead and apply the changes */
@@ -424,7 +431,6 @@ static int e1u_d_chanconfig(struct file *file, struct dahdi_chan *chan,
 			    int sigtype)
 {
 	struct ice1usb *ieu = chan->pvt;
-	unsigned long flags;
 	bool already_running;
 
 	already_running = ieu->dahdi.span.flags & DAHDI_FLAG_RUNNING;
@@ -595,7 +601,7 @@ static int find_endpoints(struct ice1usb *ieu, const struct usb_host_interface *
 		const struct usb_endpoint_descriptor *epd = &alt->endpoint[i].desc;
 		switch (usb_endpoint_type(epd)) {
 		case USB_ENDPOINT_XFER_INT:
-			if (!ieu->ep.iso_in && usb_endpoint_dir_in(epd)) {
+			if (!ieu->ep.irq && usb_endpoint_dir_in(epd)) {
 				ieu->ep.irq = epd;
 				found++;
 			}
@@ -650,19 +656,19 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	struct dahdi_device *ddev;
 	struct dahdi_span *dspan;
 	struct ice1usb *ieu;
-	int ret = -EINVAL;
+	int ret = -ENODEV;
 	int rc;
 
 	if (ifdesc->bInterfaceClass != 0xff || ifdesc->bInterfaceSubClass != 0xE1) {
-		dev_err(&intf->dev, "Unsupported Interface Class/SubClass");
-		goto error;
+		dev_err(&intf->dev, "Unsupported Interface Class/SubClass %02x/%02x",
+			ifdesc->bInterfaceClass, ifdesc->bInterfaceSubClass);
+		return -EINVAL;
 	}
 
 	ieu = kzalloc(sizeof(*ieu), GFP_KERNEL);
 	if (!ieu) {
 		dev_err(&intf->dev, "Out of memory\n");
-		ret = -ENOMEM;
-		goto error;
+		return -ENOMEM;
 	}
 
 	ieu->usb_dev = usb_dev;
@@ -707,15 +713,17 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	dspan->deflaw = DAHDI_LAW_ALAW;
 	dspan->linecompat = DAHDI_CONFIG_HDB3 | DAHDI_CONFIG_CCS | DAHDI_CONFIG_CRC4;
 	dspan->chans = ieu->dahdi.chans;
-	dspan->flags = DAHDI_FLAG_RBS;
-
-	list_add_tail(&dspan->device_node, &ddev->spans);
+	dspan->flags = 0;
+	dspan->offset = 0;
+	dspan->ops = &ice1usb_span_ops;
 
 	rc = e1u_alloc_channels(ieu);
 	if (rc) {
 		ret = -ENOMEM;
 		goto err_free_ddev;
 	}
+
+	list_add_tail(&dspan->device_node, &ddev->spans);
 
 	rc = dahdi_register_device(ieu->dahdi.dev, &intf->dev);
 	if (rc) {
