@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 /* Osmocom icE1usb driver
- * Copyright (C) 2020 by Harald Welte <laforge@osmocom.org> */
+ * Copyright (C) 2020 by Harald Welte <laforge@osmocom.org>
+ * inspired by osmo-e1d by Sylvain Munaut */
+
+#define DEBUG
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -59,6 +62,8 @@ struct ice1usb {
 		struct dahdi_chan *chans[31];
 		/* [next rx byte] offset into chan[i]->readchunk */
 		unsigned int readchunk_idx;
+		/* [next tx byte] offset into chan[i]->writechunk */
+		unsigned int writechunk_idx;
 	} dahdi;
 };
 
@@ -165,7 +170,7 @@ static int ice1usb_submit_isoc_urb(struct ice1usb *ieu,
 }
 
 /* process one incoming E1 frame (32 bytes; one for each TS) */
-static void process_rx_frame(struct ice1usb *ieu, const uint8_t *data)
+static void span_demux_one_frame(struct ice1usb *ieu, const uint8_t *data)
 {
 	struct dahdi_span *dspan = &ieu->dahdi.span;
 	unsigned int i;
@@ -191,18 +196,23 @@ static void iso_in_complete(struct urb *urb)
 	unsigned int i;
 	int rc;
 
+	//dev_dbg(&ieu->usb_dev->dev, "IN urb %p completion (%d)", urb, urb->status);
+
 	if (urb->status == 0) {
 		for (i = 0; i < urb->number_of_packets; i++) {
 			unsigned int offset = urb->iso_frame_desc[i].offset;
 			unsigned int length = urb->iso_frame_desc[i].actual_length;
 			unsigned int j;
 
-			if (urb->iso_frame_desc[i].status)
+			if (urb->iso_frame_desc[i].status) {
+				dev_err(&ieu->usb_dev->dev, "IN urb %p frame %u status %d",
+					urb, i, urb->iso_frame_desc[i].status);
 				continue;
+			}
 
 			/* process received data */
 			for (j = 4; j < length; j += 32)
-				process_rx_frame(ieu, urb->transfer_buffer + offset + j);
+				span_demux_one_frame(ieu, urb->transfer_buffer + offset + j);
 		}
 	} else if (urb->status == -ENOENT) {
 		/* Avoid suspend failed when usb_kill_urb */
@@ -232,11 +242,18 @@ static void iso_fb_complete(struct urb *urb)
 	unsigned int i;
 	int rc;
 
+	//dev_dbg(&ieu->usb_dev->dev, "FB urb %p completion (%d)", urb, urb->status);
+
 	if (urb->status == 0) {
 		for (i = 0; i < urb->number_of_packets; i++) {
 			unsigned int offset = urb->iso_frame_desc[i].offset;
 			unsigned int length = urb->iso_frame_desc[i].actual_length;
 			const uint8_t *rx = urb->transfer_buffer + offset;
+
+			if (urb->iso_frame_desc[i].status) {
+				dev_err(&ieu->usb_dev->dev, "FB urb %p frame %u status %d",
+					urb, i, urb->iso_frame_desc[i].status);
+			}
 
 			if (urb->iso_frame_desc[i].status || length < 3)
 				continue;
@@ -265,19 +282,47 @@ static void iso_fb_complete(struct urb *urb)
 	}
 }
 
+/* multiplex one E1 frame (32 bytes) and write it to 'out' */
+static void span_mux_one_frame(struct ice1usb *ieu, uint8_t *out)
+{
+	struct dahdi_span *dspan = &ieu->dahdi.span;
+	unsigned int i;
+
+	out[0] = 0;
+
+	for (i = 0; i < ARRAY_SIZE(ieu->dahdi.chans); i++) {
+		struct dahdi_chan *chan = ieu->dahdi.chans[i];
+		out[1+i] = chan->writechunk[ieu->dahdi.writechunk_idx];
+	}
+	ieu->dahdi.writechunk_idx++;
+
+	/* DAHDI_CHUNKSIZE is 8, meaning every channel (timeslot) wants data for 8
+	 * bytes (PCM samples) every time _dahdi_receive() is called */
+	if (ieu->dahdi.writechunk_idx == DAHDI_CHUNKSIZE) {
+		_dahdi_transmit(dspan);
+		ieu->dahdi.writechunk_idx = 0;
+	}
+}
+
 /* OUT endpoint URB completes */
 static void iso_out_complete(struct urb *urb)
 {
 	struct ice1usb *ieu = urb->context;
-	unsigned int i;
+	unsigned int i, j;
 	int rc;
+
+	dev_dbg(&ieu->usb_dev->dev, "OUT urb %p completion (%d) %d", urb, urb->status, urb->number_of_packets);
 
 	if (urb->status == 0) {
 		for (i = 0; i < urb->number_of_packets; i++) {
+			unsigned int offset = urb->iso_frame_desc[i].offset;
+			uint8_t *tx = urb->transfer_buffer + offset;
 			unsigned int fts; // frames to send
 
-			if (urb->iso_frame_desc[i].status)
-				continue;
+			if (urb->iso_frame_desc[i].status) {
+				dev_err(&ieu->usb_dev->dev, "OUT urb %p frame %u status %d",
+					urb, i, urb->iso_frame_desc[i].status);
+			}
 
 			/* flow control */
 			ieu->r_acc += ieu->r_sw;
@@ -290,8 +335,14 @@ static void iso_out_complete(struct urb *urb)
 			ieu->r_acc -= fts << 10;
 			if (ieu->r_acc & 0x80000000)
 				ieu->r_acc = 0;
+
+			for (j = 0; j < fts; j++)
+				span_mux_one_frame(ieu, tx + j*32);
+
+			urb->iso_frame_desc[i].length = fts * 32;
 		}
-	}
+	} else 
+		dev_err(&ieu->usb_dev->dev, "OUT urb %p completion (%d)", urb, urb->status);
 
 	/* re-submit unless stopped */
 	if (!test_bit(ICE1USB_ISOC_RUNNING, &ieu->flags))
@@ -299,6 +350,10 @@ static void iso_out_complete(struct urb *urb)
 
 	usb_anchor_urb(urb, &ieu->anchor.iso_out);
 	usb_mark_last_busy(ieu->usb_dev);
+
+	dev_dbg(&ieu->usb_dev->dev, "OUT submit len=(%d,%d,%d,%d)",
+		urb->iso_frame_desc[0].length, urb->iso_frame_desc[1].length,
+		urb->iso_frame_desc[2].length, urb->iso_frame_desc[3].length);
 
 	rc = usb_submit_urb(urb, GFP_ATOMIC);
 	if (rc < 0) {
@@ -316,16 +371,23 @@ static void iso_out_complete(struct urb *urb)
 /* interrupt EP completes: Process and resubmit */
 static void ice1usb_irq_complete(struct urb *urb)
 {
-	const struct ice1usb_irq_err *err;
+	const struct ice1usb_irq *irq;
 	struct ice1usb *ieu = urb->context;
 	int rc;
 
-	if (urb->status == 0 && urb->actual_length >= sizeof(*err)) {
-		err = (struct ice1usb_irq_err *) urb->transfer_buffer;
-		dev_dbg(&ieu->usb_dev->dev, "IRQ: crc=%u, align=%u, ovfl=%u, unfl=%u, flags=%x",
-			le16_to_cpu(err->crc), le16_to_cpu(err->align),
-			le16_to_cpu(err->ovfl), le16_to_cpu(err->unfl), err->flags);
-		//FIXME: process received data
+	dev_dbg(&ieu->usb_dev->dev, "IRQ urb %p completion (%d)", urb, urb->status);
+
+	if (urb->status == 0 && urb->actual_length >= sizeof(*irq)) {
+		const struct ice1usb_irq_err *err;
+		irq = (struct ice1usb_irq *) urb->transfer_buffer;
+		switch (irq->type) {
+		case ICE1USB_IRQQ_T_ERRCNT:
+			err = &irq->u.errors;
+			dev_dbg(&ieu->usb_dev->dev, "IRQ: crc=%u, align=%u, ovfl=%u, unfl=%u, flags=%x",
+				le16_to_cpu(err->crc), le16_to_cpu(err->align),
+				le16_to_cpu(err->ovfl), le16_to_cpu(err->unfl), err->flags);
+			break;
+		}
 	} else if (urb->status == -ENOENT) {
 		/* Avoid suspend failed when usb_kill_urb */
 		return;
@@ -394,7 +456,7 @@ static int ice1usb_submit_irq_urb(struct ice1usb *ieu, gfp_t mem_flags)
 
 
 /***********************************************************************
- * dahdi integration
+ * DAHDI integration
  ***********************************************************************/
 
 static int e1u_d_startup(struct file *file, struct dahdi_span *span);
@@ -460,20 +522,22 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 	}
 
 	if (!test_and_set_bit(ICE1USB_ISOC_RUNNING, &ieu->flags)) {
+		int i;
+		for (i = 0; i < 4; i++) {
 		ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_in, &ieu->anchor.iso_in,
 					iso_in_complete, GFP_KERNEL);
-#if 0
 		ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_fb, &ieu->anchor.iso_fb,
-					iso_fb_comoplete, GFP_KERNEL);
+					iso_fb_complete, GFP_KERNEL);
 		ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_out, &ieu->anchor.iso_out,
 					iso_out_complete, GFP_KERNEL);
-#endif
 		/* FIXME: clear_bit(ICE1USB_ISOC_RUNNING) on error) */
+		}
 	}
 
 	if (!test_and_set_bit(ICE1USB_IRQ_RUNNING, &ieu->flags)) {
 		rc = ice1usb_submit_irq_urb(ieu, GFP_KERNEL);
 		if (rc) {
+			dev_err(&ieu->usb_dev->dev, "error submitting IRQ ep (%d)", rc);
 			clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags);
 			return rc;
 		}
@@ -704,10 +768,10 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	//ddev->location = USB_BUS_PATH;
 
 	dspan = &ieu->dahdi.span;
-	snprintf(dspan->name, sizeof(dspan->name), "icE1usb/0/%d",
-		 ieu->alt_on->desc.bInterfaceNumber); //TDOO: device != 0
-	snprintf(dspan->desc, sizeof(dspan->desc), "Osmocom icE1USB Card 0 Span %d",
-		 ieu->alt_on->desc.bInterfaceNumber); //TODO: device != 0
+	snprintf(dspan->name, sizeof(dspan->name), "icE1usb/1/%d",
+		 ieu->alt_on->desc.bInterfaceNumber); //TDOO: device != 1
+	snprintf(dspan->desc, sizeof(dspan->desc), "Osmocom icE1USB Card 1 Span %d",
+		 ieu->alt_on->desc.bInterfaceNumber); //TODO: device != 1
 	dspan->channels = 31;
 	dspan->spantype = SPANTYPE_DIGITAL_E1;
 	dspan->deflaw = DAHDI_LAW_ALAW;
