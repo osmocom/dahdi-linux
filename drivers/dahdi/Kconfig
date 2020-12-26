@@ -250,4 +250,17 @@ config DAHDI_WCTE11XP
 
 	  If unsure, say Y.
 
+config DAHDI_ICE1USB
+	tristate "Osmocom iceE1usb dual-E1 Support"
+	depends on DAHDI && USB
+	default DAHDI
+	---help---
+	  This driver provides support for the Osmocom icE1usb product.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called icE1usb.
+
+	  If unsure, say Y.
+
+
 source "drivers/dahdi/xpp/Kconfig"

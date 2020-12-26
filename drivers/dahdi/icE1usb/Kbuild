@@ -1,0 +1,1 @@
+obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_ICE1USB) += icE1usb.o
