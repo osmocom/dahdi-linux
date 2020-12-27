@@ -20,6 +20,17 @@
 #define VERSION "0.1"
 #define ICE1USB_MAX_ISOC_FRAMES 	4
 
+/* for some weird reason there are no per-USB-interface log macros ?!? */
+#define ieu_ifnum(x) ((x)->alt_on ? (x)->alt_on->desc.bInterfaceNumber : -1)
+#define ieu_dbg(x, fmt, args ...) \
+	dev_dbg(&((x)->usb_dev->dev), "[%d] " fmt, ieu_ifnum(x), ## args)
+#define ieu_info(x, fmt, args ...) \
+	dev_info(&((x)->usb_dev->dev), "[%d] " fmt, ieu_ifnum(x), ## args)
+#define ieu_warn(x, fmt, args ...) \
+	dev_warn(&((x)->usb_dev->dev), "[%d] " fmt, ieu_ifnum(x), ## args)
+#define ieu_err(x, fmt, args ...) \
+	dev_err(&((x)->usb_dev->dev), "[%d] " fmt, ieu_ifnum(x), ## args)
+
 /***********************************************************************
 * data structures
 ***********************************************************************/
@@ -162,10 +173,12 @@ static int ice1usb_submit_isoc_urb(struct ice1usb *ieu,
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
 		if (rc != -EPERM && rc != -ENODEV)
-			dev_err(&ieu->usb_dev->dev, "urb %p submission failed (%d)", urb, -rc);
+			ieu_err(ieu, "EP 0x%02x urb %p submission failed (%d)",
+				ep->bEndpointAddress, urb, -rc);
 		usb_unanchor_urb(urb);
 	}
 
+	/* automatically free the URB (and its transfer buffer) once complete */
 	usb_free_urb(urb);
 
 	return rc;
@@ -198,7 +211,7 @@ static void iso_in_complete(struct urb *urb)
 	unsigned int i;
 	int rc;
 
-	//dev_dbg(&ieu->usb_dev->dev, "IN urb %p completion (%d)", urb, urb->status);
+	//ieu_dbg(ieu, "IN urb %p completion (%d)", urb, urb->status);
 
 	if (urb->status == 0) {
 		for (i = 0; i < urb->number_of_packets; i++) {
@@ -207,7 +220,7 @@ static void iso_in_complete(struct urb *urb)
 			unsigned int j;
 
 			if (urb->iso_frame_desc[i].status) {
-				dev_err(&ieu->usb_dev->dev, "IN urb %p frame %u status %d",
+				ieu_err(ieu, "IN urb %p frame %u status %d",
 					urb, i, urb->iso_frame_desc[i].status);
 				continue;
 			}
@@ -232,7 +245,7 @@ static void iso_in_complete(struct urb *urb)
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
 		if (rc != -EPERM && rc != -ENODEV)
-			dev_err(&ieu->usb_dev->dev, "urb %p submission failed (%d)", urb, -rc);
+			ieu_err(ieu, "IN urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
 }
@@ -244,7 +257,7 @@ static void iso_fb_complete(struct urb *urb)
 	unsigned int i;
 	int rc;
 
-	//dev_dbg(&ieu->usb_dev->dev, "FB urb %p completion (%d)", urb, urb->status);
+	//ieu_dbg(ieu, "FB urb %p completion (%d)", urb, urb->status);
 
 	if (urb->status == 0) {
 		for (i = 0; i < urb->number_of_packets; i++) {
@@ -253,7 +266,7 @@ static void iso_fb_complete(struct urb *urb)
 			const uint8_t *rx = urb->transfer_buffer + offset;
 
 			if (urb->iso_frame_desc[i].status) {
-				dev_err(&ieu->usb_dev->dev, "FB urb %p frame %u status %d",
+				ieu_err(ieu, "FB urb %p frame %u status %d",
 					urb, i, urb->iso_frame_desc[i].status);
 			}
 
@@ -266,7 +279,8 @@ static void iso_fb_complete(struct urb *urb)
 	} else if (urb->status == -ENOENT) {
 		/* Avoid suspend failed when usb_kill_urb */
 		return;
-	}
+	} else
+		ieu_err(ieu, "FB urb %p completion (%d)", urb, urb->status);
 
 	/* re-submit unless stopped */
 	if (!test_bit(ICE1USB_ISOC_RUNNING, &ieu->flags))
@@ -279,7 +293,7 @@ static void iso_fb_complete(struct urb *urb)
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
 		if (rc != -EPERM && rc != -ENODEV)
-			dev_err(&ieu->usb_dev->dev, "urb %p submission failed (%d)", urb, -rc);
+			dev_err(&ieu->usb_dev->dev, "FB urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
 }
@@ -313,7 +327,7 @@ static void iso_out_complete(struct urb *urb)
 	unsigned int i, j;
 	int rc;
 
-	//dev_dbg(&ieu->usb_dev->dev, "OUT urb %p completion (%d) %d", urb, urb->status, urb->number_of_packets);
+	//ieu_dbg(ieu, "OUT urb %p completion (%d) %d", urb, urb->status, urb->number_of_packets);
 
 	if (urb->status == 0) {
 		for (i = 0; i < urb->number_of_packets; i++) {
@@ -322,7 +336,7 @@ static void iso_out_complete(struct urb *urb)
 			unsigned int fts; // frames to send
 
 			if (urb->iso_frame_desc[i].status) {
-				dev_err(&ieu->usb_dev->dev, "OUT urb %p frame %u status %d",
+				ieu_err(ieu, "OUT urb %p frame %u status %d",
 					urb, i, urb->iso_frame_desc[i].status);
 			}
 
@@ -343,8 +357,11 @@ static void iso_out_complete(struct urb *urb)
 
 			urb->iso_frame_desc[i].length = 4 + fts * 32;
 		}
-	} else 
-		dev_err(&ieu->usb_dev->dev, "OUT urb %p completion (%d)", urb, urb->status);
+	} else if (urb->status == -ENOENT) {
+		/* Avoid suspend failed when usb_kill_urb */
+		return;
+	} else
+		ieu_err(ieu, "OUT urb %p completion (%d)", urb, urb->status);
 
 	/* re-submit unless stopped */
 	if (!test_bit(ICE1USB_ISOC_RUNNING, &ieu->flags))
@@ -352,16 +369,12 @@ static void iso_out_complete(struct urb *urb)
 
 	usb_anchor_urb(urb, &ieu->anchor.iso_out);
 	usb_mark_last_busy(ieu->usb_dev);
-#if 0
-	dev_dbg(&ieu->usb_dev->dev, "OUT submit len=(%d,%d,%d,%d)",
-		urb->iso_frame_desc[0].length, urb->iso_frame_desc[1].length,
-		urb->iso_frame_desc[2].length, urb->iso_frame_desc[3].length);
-#endif
+
 	rc = usb_submit_urb(urb, GFP_ATOMIC);
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
 		if (rc != -EPERM && rc != -ENODEV)
-			dev_err(&ieu->usb_dev->dev, "urb %p submission failed (%d)", urb, -rc);
+			ieu_err(ieu, "OUT urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
 }
@@ -377,7 +390,7 @@ static void ice1usb_irq_complete(struct urb *urb)
 	struct ice1usb *ieu = urb->context;
 	int rc;
 
-	dev_dbg(&ieu->usb_dev->dev, "IRQ urb %p completion (%d)", urb, urb->status);
+	ieu_dbg(ieu, "IRQ urb %p completion (%d)", urb, urb->status);
 
 	if (urb->status == 0 && urb->actual_length >= sizeof(*irq)) {
 		const struct ice1usb_irq_err *err;
@@ -385,7 +398,7 @@ static void ice1usb_irq_complete(struct urb *urb)
 		switch (irq->type) {
 		case ICE1USB_IRQQ_T_ERRCNT:
 			err = &irq->u.errors;
-			dev_dbg(&ieu->usb_dev->dev, "IRQ: crc=%u, align=%u, ovfl=%u, unfl=%u, flags=%x",
+			ieu_dbg(ieu, "IRQ: crc=%u, align=%u, ovfl=%u, unfl=%u, flags=%x",
 				le16_to_cpu(err->crc), le16_to_cpu(err->align),
 				le16_to_cpu(err->ovfl), le16_to_cpu(err->unfl), err->flags);
 			break;
@@ -393,7 +406,8 @@ static void ice1usb_irq_complete(struct urb *urb)
 	} else if (urb->status == -ENOENT) {
 		/* Avoid suspend failed when usb_kill_urb */
 		return;
-	}
+	} else
+		ieu_err(ieu, "IRQ urb %p completion (%d)", urb, urb->status);
 
 	/* re-submit unless stopped */
 	if (!test_bit(ICE1USB_IRQ_RUNNING, &ieu->flags))
@@ -406,11 +420,9 @@ static void ice1usb_irq_complete(struct urb *urb)
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
 		if (rc != -EPERM && rc != -ENODEV)
-			dev_err(&ieu->usb_dev->dev, "urb %p submission failed (%d)", urb, -rc);
+			ieu_err(ieu, "IRU urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
-
-	usb_free_urb(urb);
 }
 
 /* allocate + submit + anchor an URB for the interrupt endpoint */
@@ -447,10 +459,11 @@ static int ice1usb_submit_irq_urb(struct ice1usb *ieu, gfp_t mem_flags)
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
 		if (rc != -EPERM && rc != -ENODEV)
-			dev_err(&ieu->usb_dev->dev, "urb %p submission failed (%d)", urb, -rc);
+			ieu_err(ieu, "IRQ urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
 
+	/* automatically free the URB (and its transfer buffer) once complete */
 	usb_free_urb(urb);
 
 	return rc;
@@ -469,13 +482,13 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
 	unsigned int i;
 
-	dev_dbg(&ieu->usb_dev->dev, "entering %s", __FUNCTION__);
+	ieu_dbg(ieu, "entering %s", __FUNCTION__);
 
 	if (lc->sync < 0)
 		lc->sync = 0;
 	if (lc->sync > 1) {
-		dev_warn(&ieu->usb_dev->dev, "Cannot set clock priority "
-			"on span %d to %d\n", span->spanno, lc->sync);
+		ieu_warn(ieu, "Cannot set clock priority on span %d to %d\n",
+			 span->spanno, lc->sync);
 		lc->sync = 0;
 	}
 
@@ -500,9 +513,8 @@ static int e1u_d_chanconfig(struct file *file, struct dahdi_chan *chan,
 	bool already_running;
 
 	already_running = ieu->dahdi.span.flags & DAHDI_FLAG_RUNNING;
-	dev_info(&ieu->usb_dev->dev, "%sconfigured channel %d (%s) "
-		 "sigtype %d\n", already_running ? "Re":"",
-		 chan->channo, chan->name, sigtype);
+	ieu_info(ieu, "%sconfigured channel %d (%s) sigtype %d\n",
+		 already_running ? "Re":"", chan->channo, chan->name, sigtype);
 
 	/* FIXME: we can probably remove this completely? */
 	return 0;
@@ -515,7 +527,7 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
 	int rc;
 
-	dev_dbg(&ieu->usb_dev->dev, "entering %s", __FUNCTION__);
+	ieu_dbg(ieu, "entering %s", __FUNCTION__);
 
 	/* TODO: handle CRC4 vs. non-CRC4 case */
 	//if (span->lineconfig & DAHDI_CONFIG_CRC4)
@@ -543,7 +555,7 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 	if (!test_and_set_bit(ICE1USB_IRQ_RUNNING, &ieu->flags)) {
 		rc = ice1usb_submit_irq_urb(ieu, GFP_KERNEL);
 		if (rc) {
-			dev_err(&ieu->usb_dev->dev, "error submitting IRQ ep (%d)", rc);
+			ieu_err(ieu, "error submitting IRQ ep (%d)", rc);
 			clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags);
 			return rc;
 		}
@@ -557,7 +569,7 @@ static int e1u_d_shutdown(struct dahdi_span *span)
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
 	int rc;
 
-	dev_dbg(&ieu->usb_dev->dev, "entering %s", __FUNCTION__);
+	ieu_dbg(ieu, "entering %s", __FUNCTION__);
 
 	clear_bit(ICE1USB_ISOC_RUNNING, &ieu->flags);
 	clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags);
@@ -583,20 +595,20 @@ static int e1u_d_maint(struct dahdi_span *span, int cmd)
 {
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
 
-	dev_dbg(&ieu->usb_dev->dev, "entering %s(%d)", __FUNCTION__, cmd);
+	ieu_dbg(ieu, "entering %s(%d)", __FUNCTION__, cmd);
 
 	switch (cmd) {
 	case DAHDI_MAINT_NONE:
-		dev_info(&ieu->usb_dev->dev, "Clearing all maint modes\n");
+		ieu_info(ieu, "Clearing all maint modes\n");
 		/* FIXME */
 		break;
 	case DAHDI_MAINT_NETWORKPAYLOADLOOP:
-		dev_info(&ieu->usb_dev->dev, "Turning on network loopback\n");
+		ieu_info(ieu, "Turning on network loopback\n");
 		/* FIXME */
 		break;
 	/* TODO: DAHDI_MAINT_*_DEFECT */
 	default:
-		dev_info(&ieu->usb_dev->dev, "Unknown E1 maint command: %d\n", cmd);
+		ieu_info(ieu, "Unknown E1 maint command: %d\n", cmd);
 		return -ENOSYS;
 	}
 
@@ -717,7 +729,7 @@ static int ice1usb_set_altif(struct ice1usb *ieu, bool on)
 {
 	const struct usb_interface_descriptor *desc;
 
-	dev_dbg(&ieu->usb_dev->dev, "entering %s(%d)", __FUNCTION__, on);
+	ieu_dbg(ieu, "entering %s(%d)", __FUNCTION__, on);
 
 	if (on)
 		desc = &ieu->alt_on->desc;
