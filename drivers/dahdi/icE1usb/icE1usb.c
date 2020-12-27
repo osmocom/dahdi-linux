@@ -11,6 +11,7 @@
 #include <linux/usb.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>
+#include <linux/spinlock.h>
 #include <linux/pm_runtime.h>
 
 #include <dahdi/kernel.h>
@@ -69,8 +70,10 @@ struct ice1usb {
 	/* enum ice1usb_flags */
 	unsigned long flags;
 	/* feedback flow-control */
-	uint32_t r_acc;
-	uint32_t r_sw;
+	struct {
+		uint32_t r_acc;
+		uint32_t r_sw;
+	} fc;
 	/* DAHDI driver related bits */
 	struct {
 		struct dahdi_device *dev;
@@ -83,6 +86,8 @@ struct ice1usb {
 	} dahdi;
 	/* is the device still present (true) or already absent/unplugged (false) */
 	bool present;
+	/* spinlock protecting concurrent access to fc, {read,write}chunk_idx, ... */
+	spinlock_t lock;
 };
 
 static void ice1usb_free(struct ice1usb *ieu)
@@ -190,7 +195,7 @@ static int ice1usb_submit_isoc_urb(struct ice1usb *ieu,
 }
 
 /* process one incoming E1 frame (32 bytes; one for each TS) */
-static void span_demux_one_frame(struct ice1usb *ieu, const uint8_t *data)
+static void _span_demux_one_frame(struct ice1usb *ieu, const uint8_t *data)
 {
 	struct dahdi_span *dspan = &ieu->dahdi.span;
 	unsigned int i;
@@ -204,7 +209,7 @@ static void span_demux_one_frame(struct ice1usb *ieu, const uint8_t *data)
 	/* DAHDI_CHUNKSIZE is 8, meaning every channel (timeslot) wants data for 8
  	 * bytes (PCM samples) every time _dahdi_receive() is called */
 	if (ieu->dahdi.readchunk_idx == DAHDI_CHUNKSIZE) {
-		dahdi_receive(dspan);
+		_dahdi_receive(dspan);
 		ieu->dahdi.readchunk_idx = 0;
 	}
 }
@@ -222,6 +227,7 @@ static void iso_in_complete(struct urb *urb)
 		for (i = 0; i < urb->number_of_packets; i++) {
 			unsigned int offset = urb->iso_frame_desc[i].offset;
 			unsigned int length = urb->iso_frame_desc[i].actual_length;
+			unsigned long flags;
 			unsigned int j;
 
 			if (urb->iso_frame_desc[i].status) {
@@ -231,8 +237,10 @@ static void iso_in_complete(struct urb *urb)
 			}
 
 			/* process received data */
+			spin_lock_irqsave(&ieu->lock, flags);
 			for (j = 4; j < length; j += 32)
-				span_demux_one_frame(ieu, urb->transfer_buffer + offset + j);
+				_span_demux_one_frame(ieu, urb->transfer_buffer + offset + j);
+			spin_unlock_irqrestore(&ieu->lock, flags);
 		}
 	} else if (urb->status == -ENOENT) {
 		/* Avoid suspend failed when usb_kill_urb */
@@ -269,6 +277,7 @@ static void iso_fb_complete(struct urb *urb)
 			unsigned int offset = urb->iso_frame_desc[i].offset;
 			unsigned int length = urb->iso_frame_desc[i].actual_length;
 			const uint8_t *rx = urb->transfer_buffer + offset;
+			unsigned long flags;
 
 			if (urb->iso_frame_desc[i].status) {
 				ieu_err(ieu, "FB urb %p frame %u status %d",
@@ -279,7 +288,9 @@ static void iso_fb_complete(struct urb *urb)
 				continue;
 
 			/* process received data */
-			ieu->r_sw = (rx[2] << 16) | (rx[1] << 8) | rx[0];
+			spin_lock_irqsave(&ieu->lock, flags);
+			ieu->fc.r_sw = (rx[2] << 16) | (rx[1] << 8) | rx[0];
+			spin_unlock_irqrestore(&ieu->lock, flags);
 		}
 	} else if (urb->status == -ENOENT) {
 		/* Avoid suspend failed when usb_kill_urb */
@@ -303,8 +314,8 @@ static void iso_fb_complete(struct urb *urb)
 	}
 }
 
-/* multiplex one E1 frame (32 bytes) and write it to 'out' */
-static void span_mux_one_frame(struct ice1usb *ieu, uint8_t *out)
+/* multiplex one E1 frame (32 bytes) and write it to 'out'; caller must hold ieu->lock */
+static void _span_mux_one_frame(struct ice1usb *ieu, uint8_t *out)
 {
 	struct dahdi_span *dspan = &ieu->dahdi.span;
 	unsigned int i;
@@ -339,26 +350,32 @@ static void iso_out_complete(struct urb *urb)
 			unsigned int offset = urb->iso_frame_desc[i].offset;
 			uint8_t *tx = urb->transfer_buffer + offset;
 			unsigned int fts; // frames to send
+			unsigned long flags;
 
 			if (urb->iso_frame_desc[i].status) {
 				ieu_err(ieu, "OUT urb %p frame %u status %d",
 					urb, i, urb->iso_frame_desc[i].status);
 			}
 
+
+			spin_lock_irqsave(&ieu->lock, flags);
+
 			/* flow control */
-			ieu->r_acc += ieu->r_sw;
-			fts = ieu->r_acc >> 10;
+			ieu->fc.r_acc += ieu->fc.r_sw;
+			fts = ieu->fc.r_acc >> 10;
 			if (fts < 4)
 				fts = 4;
 			else if (fts > 12)
 				fts = 12;
 
-			ieu->r_acc -= fts << 10;
-			if (ieu->r_acc & 0x80000000)
-				ieu->r_acc = 0;
+			ieu->fc.r_acc -= fts << 10;
+			if (ieu->fc.r_acc & 0x80000000)
+				ieu->fc.r_acc = 0;
 
 			for (j = 0; j < fts; j++)
-				span_mux_one_frame(ieu, tx + 4 + j*32);
+				_span_mux_one_frame(ieu, tx + 4 + j*32);
+
+			spin_unlock_irqrestore(&ieu->lock, flags);
 
 			urb->iso_frame_desc[i].length = 4 + fts * 32;
 		}
@@ -798,9 +815,10 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 
 	ieu->usb_dev = usb_dev;
 	ieu->usb_intf = intf;
-	ieu->r_acc = 0;
-	ieu->r_sw = 8192;
+	ieu->fc.r_acc = 0;
+	ieu->fc.r_sw = 8192;
 	ieu->present = true;
+	spin_lock_init(&ieu->lock);
 
 	/* locate ON / OFF altsettings */
 	ieu->alt_off = find_altsetting_off(ieu->usb_intf);
