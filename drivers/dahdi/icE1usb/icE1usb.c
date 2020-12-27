@@ -426,7 +426,7 @@ static void ice1usb_irq_complete(struct urb *urb)
 	struct ice1usb *ieu = urb->context;
 	int rc;
 
-	ieu_dbg(ieu, "IRQ urb %p completion (%d)", urb, urb->status);
+	//ieu_dbg(ieu, "IRQ urb %p completion (%d)", urb, urb->status);
 
 	if (urb->status == 0 && urb->actual_length >= sizeof(*irq)) {
 		const struct ice1usb_irq_err *err;
@@ -816,7 +816,7 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	dev_dbg(&intf->dev, "entering %s", __FUNCTION__);
 
 	if (ifdesc->bInterfaceClass != 0xff || ifdesc->bInterfaceSubClass != 0xE1) {
-		dev_err(&intf->dev, "Unsupported Interface Class/SubClass %02x/%02x",
+		dev_dbg(&intf->dev, "Unsupported Interface Class/SubClass %02x/%02x",
 			ifdesc->bInterfaceClass, ifdesc->bInterfaceSubClass);
 		return -ENODEV;
 	}
