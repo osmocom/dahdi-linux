@@ -18,7 +18,12 @@
 #include "ice1usb_proto.h"
 
 #define VERSION "0.1"
+
+/* number of isochronous frames per URB */
 #define ICE1USB_MAX_ISOC_FRAMES 	4
+
+/* number of URBs per endpoint */
+#define ICE1USB_NUM_URBS 	4
 
 /* for some weird reason there are no per-USB-interface log macros ?!? */
 #define ieu_ifnum(x) ((x)->alt_on ? (x)->alt_on->desc.bInterfaceNumber : -1)
@@ -525,6 +530,7 @@ static int ice1usb_set_altif(struct ice1usb *ieu, bool on);
 static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 {
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
+	unsigned int i;
 	int rc;
 
 	ieu_dbg(ieu, "entering %s", __FUNCTION__);
@@ -534,34 +540,54 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 
 	/* Ensure we are in the right altsetting */
 	rc = ice1usb_set_altif(ieu, true);
-	if (rc < 0) {
-		/* cancel transfers */
+	if (rc < 0)
 		return rc;
-	}
 
 	if (!test_and_set_bit(ICE1USB_ISOC_RUNNING, &ieu->flags)) {
-		int i;
-		for (i = 0; i < 4; i++) {
-		ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_in, &ieu->anchor.iso_in,
-					iso_in_complete, GFP_KERNEL);
-		ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_fb, &ieu->anchor.iso_fb,
-					iso_fb_complete, GFP_KERNEL);
-		ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_out, &ieu->anchor.iso_out,
-					iso_out_complete, GFP_KERNEL);
-		/* FIXME: clear_bit(ICE1USB_ISOC_RUNNING) on error) */
+		for (i = 0; i < ICE1USB_NUM_URBS; i++) {
+			rc = ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_in, &ieu->anchor.iso_in,
+						     iso_in_complete, GFP_KERNEL);
+			if (rc) {
+				ieu_err(ieu, "error submitting IN ep URB %u (%d)", i, rc);
+				goto err_isoc;
+			}
+			rc = ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_fb, &ieu->anchor.iso_fb,
+						     iso_fb_complete, GFP_KERNEL);
+			if (rc) {
+				ieu_err(ieu, "error submitting FB ep URB %u (%d)", i, rc);
+				goto err_isoc;
+			}
+			rc = ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_out, &ieu->anchor.iso_out,
+						     iso_out_complete, GFP_KERNEL);
+			if (rc) {
+				ieu_err(ieu, "error submitting OUT ep URB %u (%d)", i, rc);
+				goto err_isoc;
+			}
 		}
 	}
 
 	if (!test_and_set_bit(ICE1USB_IRQ_RUNNING, &ieu->flags)) {
-		rc = ice1usb_submit_irq_urb(ieu, GFP_KERNEL);
-		if (rc) {
-			ieu_err(ieu, "error submitting IRQ ep (%d)", rc);
-			clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags);
-			return rc;
+		for (i = 0; i < ICE1USB_NUM_URBS; i++) {
+			rc = ice1usb_submit_irq_urb(ieu, GFP_KERNEL);
+			if (rc) {
+				ieu_err(ieu, "error submitting IRQ ep %u (%d)", i, rc);
+				goto err_irq;
+			}
 		}
 	}
 
 	return 0;
+
+err_irq:
+	usb_kill_anchored_urbs(&ieu->anchor.irq);
+	clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags);
+err_isoc:
+	usb_kill_anchored_urbs(&ieu->anchor.iso_in);
+	usb_kill_anchored_urbs(&ieu->anchor.iso_out);
+	usb_kill_anchored_urbs(&ieu->anchor.iso_fb);
+	clear_bit(ICE1USB_ISOC_RUNNING, &ieu->flags);
+	ice1usb_set_altif(ieu, false);
+	return rc;
 }
 
 static int e1u_d_shutdown(struct dahdi_span *span)
@@ -728,6 +754,7 @@ static int find_endpoints(struct ice1usb *ieu, const struct usb_host_interface *
 static int ice1usb_set_altif(struct ice1usb *ieu, bool on)
 {
 	const struct usb_interface_descriptor *desc;
+	int rc;
 
 	ieu_dbg(ieu, "entering %s(%d)", __FUNCTION__, on);
 
@@ -736,9 +763,14 @@ static int ice1usb_set_altif(struct ice1usb *ieu, bool on)
 	else
 		desc = &ieu->alt_off->desc;
 
-	return usb_set_interface(ieu->usb_dev, desc->bInterfaceNumber, desc->bAlternateSetting);
-}
+	rc = usb_set_interface(ieu->usb_dev, desc->bInterfaceNumber, desc->bAlternateSetting);
+	if (rc) {
+		ieu_err(ieu, "error setting %s-altif %u (%d)",
+			on ? "ON" : "OFF", desc->bInterfaceNumber, rc);
+	}
 
+	return rc;
+}
 
 static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id *prod)
 {
