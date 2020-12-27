@@ -180,7 +180,7 @@ static int ice1usb_submit_isoc_urb(struct ice1usb *ieu,
 	rc = usb_submit_urb(urb, mem_flags);
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
-		if (rc != -EPERM && rc != -ENODEV)
+		if (rc != -EPERM && rc != -ENODEV && rc != -ENOENT)
 			ieu_err(ieu, "EP 0x%02x urb %p submission failed (%d)",
 				ep->bEndpointAddress, urb, -rc);
 		usb_unanchor_urb(urb);
@@ -221,7 +221,8 @@ static void iso_in_complete(struct urb *urb)
 
 	//ieu_dbg(ieu, "IN urb %p completion (%d)", urb, urb->status);
 
-	if (urb->status == 0) {
+	switch (urb->status) {
+	case 0:
 		for (i = 0; i < urb->number_of_packets; i++) {
 			unsigned int offset = urb->iso_frame_desc[i].offset;
 			unsigned int length = urb->iso_frame_desc[i].actual_length;
@@ -240,9 +241,14 @@ static void iso_in_complete(struct urb *urb)
 				_span_demux_one_frame(ieu, urb->transfer_buffer + offset + j);
 			spin_unlock_irqrestore(&ieu->lock, flags);
 		}
-	} else if (urb->status == -ENOENT) {
+		break;
+	case -ENOENT:
+	case -ESHUTDOWN:
 		/* Avoid suspend failed when usb_kill_urb */
 		return;
+	default:
+		ieu_err(ieu, "IN urb %p completion (%d)", urb, urb->status);
+		break;
 	}
 
 	/* re-submit unless stopped */
@@ -255,7 +261,7 @@ static void iso_in_complete(struct urb *urb)
 	rc = usb_submit_urb(urb, GFP_ATOMIC);
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
-		if (rc != -EPERM && rc != -ENODEV)
+		if (rc != -EPERM && rc != -ENODEV && rc != -ENOENT)
 			ieu_err(ieu, "IN urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
@@ -270,7 +276,8 @@ static void iso_fb_complete(struct urb *urb)
 
 	//ieu_dbg(ieu, "FB urb %p completion (%d)", urb, urb->status);
 
-	if (urb->status == 0) {
+	switch (urb->status) {
+	case 0:
 		for (i = 0; i < urb->number_of_packets; i++) {
 			unsigned int offset = urb->iso_frame_desc[i].offset;
 			unsigned int length = urb->iso_frame_desc[i].actual_length;
@@ -290,11 +297,15 @@ static void iso_fb_complete(struct urb *urb)
 			ieu->fc.r_sw = (rx[2] << 16) | (rx[1] << 8) | rx[0];
 			spin_unlock_irqrestore(&ieu->lock, flags);
 		}
-	} else if (urb->status == -ENOENT) {
+		break;
+	case -ENOENT:
+	case -ESHUTDOWN:
 		/* Avoid suspend failed when usb_kill_urb */
 		return;
-	} else
+	default:
 		ieu_err(ieu, "FB urb %p completion (%d)", urb, urb->status);
+		break;
+	}
 
 	/* re-submit unless stopped */
 	if (!test_bit(ICE1USB_ISOC_RUNNING, &ieu->flags))
@@ -306,7 +317,7 @@ static void iso_fb_complete(struct urb *urb)
 	rc = usb_submit_urb(urb, GFP_ATOMIC);
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
-		if (rc != -EPERM && rc != -ENODEV)
+		if (rc != -EPERM && rc != -ENODEV && rc != -ENOENT)
 			dev_err(&ieu->usb_dev->dev, "FB urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
@@ -343,7 +354,8 @@ static void iso_out_complete(struct urb *urb)
 
 	//ieu_dbg(ieu, "OUT urb %p completion (%d) %d", urb, urb->status, urb->number_of_packets);
 
-	if (urb->status == 0) {
+	switch (urb->status) {
+	case 0:
 		for (i = 0; i < urb->number_of_packets; i++) {
 			unsigned int offset = urb->iso_frame_desc[i].offset;
 			uint8_t *tx = urb->transfer_buffer + offset;
@@ -377,11 +389,15 @@ static void iso_out_complete(struct urb *urb)
 
 			urb->iso_frame_desc[i].length = 4 + fts * 32;
 		}
-	} else if (urb->status == -ENOENT) {
+		break;
+	case -ENOENT:
+	case -ESHUTDOWN:
 		/* Avoid suspend failed when usb_kill_urb */
 		return;
-	} else
+	default:
 		ieu_err(ieu, "OUT urb %p completion (%d)", urb, urb->status);
+		break;
+	}
 
 	/* re-submit unless stopped */
 	if (!test_bit(ICE1USB_ISOC_RUNNING, &ieu->flags))
@@ -393,7 +409,7 @@ static void iso_out_complete(struct urb *urb)
 	rc = usb_submit_urb(urb, GFP_ATOMIC);
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
-		if (rc != -EPERM && rc != -ENODEV)
+		if (rc != -EPERM && rc != -ENODEV && rc != -ENOENT)
 			ieu_err(ieu, "OUT urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
@@ -439,7 +455,7 @@ static void ice1usb_irq_complete(struct urb *urb)
 	rc = usb_submit_urb(urb, GFP_ATOMIC);
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
-		if (rc != -EPERM && rc != -ENODEV)
+		if (rc != -EPERM && rc != -ENODEV && rc != -ENOENT)
 			ieu_err(ieu, "IRU urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
@@ -478,7 +494,7 @@ static int ice1usb_submit_irq_urb(struct ice1usb *ieu, gfp_t mem_flags)
 	rc = usb_submit_urb(urb, mem_flags);
 	if (rc < 0) {
 		/* -EPERM: urb is being killed; -ENODEV: device got disconnected */
-		if (rc != -EPERM && rc != -ENODEV)
+		if (rc != -EPERM && rc != -ENODEV && rc != -ENOENT)
 			ieu_err(ieu, "IRQ urb %p submission failed (%d)", urb, -rc);
 		usb_unanchor_urb(urb);
 	}
