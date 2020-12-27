@@ -65,6 +65,8 @@ struct ice1usb {
 		/* [next tx byte] offset into chan[i]->writechunk */
 		unsigned int writechunk_idx;
 	} dahdi;
+	/* is the device still present (true) or already absent/unplugged (false) */
+	bool present;
 };
 
 static void ice1usb_free(struct ice1usb *ieu)
@@ -467,6 +469,8 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
 	unsigned int i;
 
+	dev_dbg(&ieu->usb_dev->dev, "entering %s", __FUNCTION__);
+
 	if (lc->sync < 0)
 		lc->sync = 0;
 	if (lc->sync > 1) {
@@ -496,9 +500,9 @@ static int e1u_d_chanconfig(struct file *file, struct dahdi_chan *chan,
 	bool already_running;
 
 	already_running = ieu->dahdi.span.flags & DAHDI_FLAG_RUNNING;
-	dev_notice(&ieu->usb_dev->dev, "%sconfigured channel %d (%s) "
-		   "sigtype %d\n", already_running ? "Re":"",
-		   chan->channo, chan->name, sigtype);
+	dev_info(&ieu->usb_dev->dev, "%sconfigured channel %d (%s) "
+		 "sigtype %d\n", already_running ? "Re":"",
+		 chan->channo, chan->name, sigtype);
 
 	/* FIXME: we can probably remove this completely? */
 	return 0;
@@ -510,6 +514,8 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 {
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
 	int rc;
+
+	dev_dbg(&ieu->usb_dev->dev, "entering %s", __FUNCTION__);
 
 	/* TODO: handle CRC4 vs. non-CRC4 case */
 	//if (span->lineconfig & DAHDI_CONFIG_CRC4)
@@ -551,6 +557,8 @@ static int e1u_d_shutdown(struct dahdi_span *span)
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
 	int rc;
 
+	dev_dbg(&ieu->usb_dev->dev, "entering %s", __FUNCTION__);
+
 	clear_bit(ICE1USB_ISOC_RUNNING, &ieu->flags);
 	clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags);
 
@@ -559,10 +567,13 @@ static int e1u_d_shutdown(struct dahdi_span *span)
 	usb_kill_anchored_urbs(&ieu->anchor.iso_fb);
 	usb_kill_anchored_urbs(&ieu->anchor.irq);
 
-	/* switch to 'off' altsetting */
-	rc = ice1usb_set_altif(ieu, false);
-	if (rc < 0)
-		return rc;
+	/* guard against devices unplugged (see ice1usb_disconnect) */
+	if (ieu->present) {
+		/* switch to 'off' altsetting */
+		rc = ice1usb_set_altif(ieu, false);
+		if (rc < 0)
+			return rc;
+	}
 
 	return 0;
 }
@@ -571,6 +582,8 @@ static int e1u_d_shutdown(struct dahdi_span *span)
 static int e1u_d_maint(struct dahdi_span *span, int cmd)
 {
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
+
+	dev_dbg(&ieu->usb_dev->dev, "entering %s(%d)", __FUNCTION__, cmd);
 
 	switch (cmd) {
 	case DAHDI_MAINT_NONE:
@@ -704,6 +717,8 @@ static int ice1usb_set_altif(struct ice1usb *ieu, bool on)
 {
 	const struct usb_interface_descriptor *desc;
 
+	dev_dbg(&ieu->usb_dev->dev, "entering %s(%d)", __FUNCTION__, on);
+
 	if (on)
 		desc = &ieu->alt_on->desc;
 	else
@@ -723,10 +738,12 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	int ret = -ENODEV;
 	int rc;
 
+	dev_dbg(&intf->dev, "entering %s", __FUNCTION__);
+
 	if (ifdesc->bInterfaceClass != 0xff || ifdesc->bInterfaceSubClass != 0xE1) {
 		dev_err(&intf->dev, "Unsupported Interface Class/SubClass %02x/%02x",
 			ifdesc->bInterfaceClass, ifdesc->bInterfaceSubClass);
-		return -EINVAL;
+		return -ENODEV;
 	}
 
 	ieu = kzalloc(sizeof(*ieu), GFP_KERNEL);
@@ -739,6 +756,7 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	ieu->usb_intf = intf;
 	ieu->r_acc = 0;
 	ieu->r_sw = 8192;
+	ieu->present = true;
 
 	/* locate ON / OFF altsettings */
 	ieu->alt_off = find_altsetting_off(ieu->usb_intf);
@@ -813,18 +831,28 @@ error:
 	return ret;
 }
 
+static struct usb_driver ice1usb_driver;
+
 static void ice1usb_disconnect(struct usb_interface *intf)
 {
 	struct ice1usb *ieu = usb_get_intfdata(intf);
 
-	/* FIXME: stop transfers? */
+	dev_dbg(&intf->dev, "entering %s", __FUNCTION__);
 
-	dahdi_unregister_device(ieu->dahdi.dev);
+	if (!ieu)
+		return;
+
+	/* avoid any shutdown code from submitting further I/O */
+	ieu->present = false;
 
 	usb_set_intfdata(intf, NULL);
-	ice1usb_free(ieu);
 
-	dev_dbg(&intf->dev, "disconnected\n");
+	/* will in turn call e1u_d_shutdown() which stops all transfers */
+	dahdi_unregister_device(ieu->dahdi.dev);
+
+	usb_driver_release_interface(&ice1usb_driver, intf);
+
+	ice1usb_free(ieu);
 }
 
 #if 0
