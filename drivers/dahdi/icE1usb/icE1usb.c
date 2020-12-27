@@ -26,16 +26,14 @@
 /* number of URBs per endpoint */
 #define ICE1USB_NUM_URBS 	4
 
-/* for some weird reason there are no per-USB-interface log macros ?!? */
-#define ieu_ifnum(x) ((x)->alt_on ? (x)->alt_on->desc.bInterfaceNumber : -1)
 #define ieu_dbg(x, fmt, args ...) \
-	dev_dbg(&((x)->usb_dev->dev), "[%d] " fmt, ieu_ifnum(x), ## args)
+	dev_dbg(&((x)->usb_intf->dev), fmt, ## args)
 #define ieu_info(x, fmt, args ...) \
-	dev_info(&((x)->usb_dev->dev), "[%d] " fmt, ieu_ifnum(x), ## args)
+	dev_info(&((x)->usb_intf->dev), fmt, ## args)
 #define ieu_warn(x, fmt, args ...) \
-	dev_warn(&((x)->usb_dev->dev), "[%d] " fmt, ieu_ifnum(x), ## args)
+	dev_warn(&((x)->usb_intf->dev), fmt, ## args)
 #define ieu_err(x, fmt, args ...) \
-	dev_err(&((x)->usb_dev->dev), "[%d] " fmt, ieu_ifnum(x), ## args)
+	dev_err(&((x)->usb_intf->dev), fmt, ## args)
 
 /***********************************************************************
 * data structures
