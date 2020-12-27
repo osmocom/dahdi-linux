@@ -850,8 +850,6 @@ static void ice1usb_disconnect(struct usb_interface *intf)
 	/* will in turn call e1u_d_shutdown() which stops all transfers */
 	dahdi_unregister_device(ieu->dahdi.dev);
 
-	usb_driver_release_interface(&ice1usb_driver, intf);
-
 	ice1usb_free(ieu);
 }
 
