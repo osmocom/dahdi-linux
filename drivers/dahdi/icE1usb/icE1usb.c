@@ -86,6 +86,8 @@ struct ice1usb {
 	bool present;
 	/* spinlock protecting concurrent access to fc, {read,write}chunk_idx, ... */
 	spinlock_t lock;
+	/* maximum number of 32-byte E1 frames to send in one ISO OUT packet */
+	unsigned int max_fts;
 };
 
 static void ice1usb_free(struct ice1usb *ieu)
@@ -375,8 +377,8 @@ static void iso_out_complete(struct urb *urb)
 			fts = ieu->fc.r_acc >> 10;
 			if (fts < 4)
 				fts = 4;
-			else if (fts > 12)
-				fts = 12;
+			else if (fts > ieu->max_fts)
+				fts = ieu->max_fts;
 
 			ieu->fc.r_acc -= fts << 10;
 			if (ieu->fc.r_acc & 0x80000000)
@@ -807,6 +809,7 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 {
 	struct usb_device *usb_dev = usb_get_dev(interface_to_usbdev(intf));
 	const struct usb_interface_descriptor *ifdesc = &intf->altsetting->desc;
+	unsigned int max_pack_size;
 	struct dahdi_device *ddev;
 	struct dahdi_span *dspan;
 	struct ice1usb *ieu;
@@ -851,6 +854,11 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 		dev_err(&intf->dev, "Cannot find all endpoints");
 		goto error;
 	}
+
+	/* compute the maximum number of E1 frames to send in one ISO OUT packet */
+	max_pack_size = le16_to_cpu(ieu->ep.iso_out->wMaxPacketSize);
+	ieu->max_fts = (max_pack_size - 4) / 32;
+	dev_dbg(&intf->dev, "Maximum FTS: %u", ieu->max_fts);
 
 	/* TODO: only one dahdi_device even for multiple USB interfaces? */
 	ddev = ieu->dahdi.dev = dahdi_create_device();
