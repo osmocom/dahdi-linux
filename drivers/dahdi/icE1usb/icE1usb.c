@@ -451,7 +451,7 @@ static void ice1usb_irq_complete(struct urb *urb)
 		const struct ice1usb_irq_err *err;
 		irq = (struct ice1usb_irq *) urb->transfer_buffer;
 		switch (irq->type) {
-		case ICE1USB_IRQQ_T_ERRCNT:
+		case ICE1USB_IRQ_T_ERRCNT:
 			err = &irq->u.errors;
 			ieu_dbg(ieu, "IRQ: crc=%u, align=%u, ovfl=%u, unfl=%u, flags=%x",
 				le16_to_cpu(err->crc), le16_to_cpu(err->align),
