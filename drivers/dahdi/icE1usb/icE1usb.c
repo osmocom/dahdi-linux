@@ -530,6 +530,7 @@ static int ice1usb_submit_irq_urb(struct ice1usb *ieu, gfp_t mem_flags)
  ***********************************************************************/
 
 static int e1u_d_startup(struct file *file, struct dahdi_span *span);
+static int e1u_d_shutdown(struct dahdi_span *span);
 
 static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 			    struct dahdi_lineconfig *lc)
@@ -555,8 +556,13 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 	}
 
 	/* If we're already running, then go ahead and apply the changes */
-	if (span->flags & DAHDI_FLAG_RUNNING)
+	if (span->flags & DAHDI_FLAG_RUNNING) {
+		/* there should probably be a more elegant way to do this, but
+		 * we don't expect people to keep re-configuring their span all
+		 * day long, so a brief interruption is deemed acceptable */
+		e1u_d_shutdown(span);
 		e1u_d_startup(file, span);
+	}
 
 	return 0;
 }
