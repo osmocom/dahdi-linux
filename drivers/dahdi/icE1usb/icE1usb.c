@@ -438,6 +438,8 @@ static void iso_out_complete(struct urb *urb)
  * INTERRUPT transfers
  ***********************************************************************/
 
+#define ALL_RED_ALARMS (DAHDI_ALARM_RED | DAHDI_ALARM_LFA | DAHDI_ALARM_LMFA | ICE1USB_ERR_F_LOS)
+
 /* interrupt EP completes: Process and resubmit */
 static void ice1usb_irq_complete(struct urb *urb)
 {
@@ -449,6 +451,7 @@ static void ice1usb_irq_complete(struct urb *urb)
 
 	if (urb->status == 0 && urb->actual_length >= sizeof(*irq)) {
 		const struct ice1usb_irq_err *err;
+		unsigned int alarms = 0;
 		irq = (struct ice1usb_irq *) urb->transfer_buffer;
 		switch (irq->type) {
 		case ICE1USB_IRQ_T_ERRCNT:
@@ -456,6 +459,15 @@ static void ice1usb_irq_complete(struct urb *urb)
 			ieu_dbg(ieu, "IRQ: crc=%u, align=%u, ovfl=%u, unfl=%u, flags=%x",
 				le16_to_cpu(err->crc), le16_to_cpu(err->align),
 				le16_to_cpu(err->ovfl), le16_to_cpu(err->unfl), err->flags);
+			/* update alarms.  Other drivers have some de-bouncing timers, I guess
+			 * we can get away without doing this. */
+			if (err->flags & ICE1USB_ERR_F_LOS)
+				alarms |= DAHDI_ALARM_RED | DAHDI_ALARM_LOS;
+			if (err->flags & ICE1USB_ERR_F_ALIGN_ERR)
+				alarms |= DAHDI_ALARM_RED | DAHDI_ALARM_LFA | DAHDI_ALARM_LMFA;
+			ieu->dahdi.span.alarms &= ~ALL_RED_ALARMS;
+			ieu->dahdi.span.alarms |= alarms;
+			dahdi_alarm_notify(&ieu->dahdi.span);
 			break;
 		}
 	} else if (urb->status == -ENOENT) {
