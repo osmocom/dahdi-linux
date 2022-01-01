@@ -82,6 +82,9 @@ struct ice1usb {
 		const struct usb_endpoint_descriptor *iso_fb;
 		const struct usb_endpoint_descriptor *irq;
 	} ep;
+	struct {
+		struct ice1usb_tx_config tx;
+	} cfg;
 	/* enum ice1usb_flags */
 	unsigned long flags;
 	/* feedback flow-control */
@@ -144,6 +147,70 @@ static int e1u_alloc_channels(struct ice1usb *ieu)
 	}
 	return 0;
 }
+
+static const char *tx_mode_str(enum ice1usb_tx_mode tx_mode)
+{
+	switch (tx_mode) {
+	case ICE1USB_TX_MODE_TRANSP:
+		return "TRANSPARENT";
+	case ICE1USB_TX_MODE_TS0:
+		return "TS0";
+	case ICE1USB_TX_MODE_TS0_CRC4:
+		return "TS0_CRC4";
+	case ICE1USB_TX_MODE_TS0_CRC4_E:
+		return "TS0_CRC4_E";
+	default:
+		return "unknown";
+	}
+}
+
+static const char *tx_timing_str(enum ice1usb_tx_timing tx_timing)
+{
+	switch (tx_timing) {
+	case ICE1USB_TX_TIME_SRC_LOCAL:
+		return "LOCAL";
+	case ICE1USB_TX_TIME_SRC_REMOTE:
+		return "REMOTE";
+	default:
+		return "unknown";
+	}
+}
+
+static const char *tx_ext_loopback_str(enum ice1usb_tx_ext_loopback ext_lb)
+{
+	switch (ext_lb) {
+	case ICE1USB_TX_EXT_LOOPBACK_OFF:
+		return "OFF";
+	case ICE1USB_TX_EXT_LOOPBACK_SAME:
+		return "SAME";
+	case ICE1USB_TX_EXT_LOOPBACK_CROSS:
+		return "CROSS";
+	default:
+		return "unknown";
+	}
+}
+
+#define USB_RT_VEND_IF (USB_TYPE_VENDOR | USB_RECIP_INTERFACE)
+
+/* synchronous request, may block up to 1s, only called from process context! */
+static int ice1usb_tx_config(struct ice1usb *ieu)
+{
+	int rc;
+
+	ieu_info(ieu, "TX-CONFIG (crc4=%s, timing=%s, ext_loopback=%s, tx_yellow_alarm=%u)\n",
+		 tx_mode_str(ieu->cfg.tx.mode), tx_timing_str(ieu->cfg.tx.timing),
+		 tx_ext_loopback_str(ieu->cfg.tx.ext_loopback), ieu->cfg.tx.alarm);
+
+	rc = usb_control_msg(ieu->usb_dev, usb_sndctrlpipe(ieu->usb_dev, 0),
+				ICE1USB_INTF_SET_TX_CFG, USB_RT_VEND_IF,
+				0, 0, &ieu->cfg.tx, sizeof(ieu->cfg.tx), 1000);
+	if (rc < 0)
+		return rc;
+	if (rc != sizeof(ieu->cfg.tx))
+		return -EIO;
+	return 0;
+}
+
 
 /***********************************************************************
  * ISOCHRONOUS transfers
@@ -549,6 +616,7 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 {
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
 	unsigned int i;
+	int rc;
 
 	ieu_dbg(ieu, "entering %s", __FUNCTION__);
 
@@ -560,7 +628,19 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 		lc->sync = 0;
 	}
 
-	/* FIXME: use lc->sync to decide LOCAL/REMOTE timing source */
+	if (span->lineconfig & DAHDI_CONFIG_CRC4)
+		ieu->cfg.tx.mode = ICE1USB_TX_MODE_TS0_CRC4;
+	else
+		ieu->cfg.tx.mode = ICE1USB_TX_MODE_TS0;
+
+	if (lc->sync > 0)
+		ieu->cfg.tx.timing = ICE1USB_TX_TIME_SRC_LOCAL;
+	else
+		ieu->cfg.tx.timing = ICE1USB_TX_TIME_SRC_REMOTE;
+
+	/* (re-)set to sane defaults */
+	ieu->cfg.tx.ext_loopback = ICE1USB_TX_EXT_LOOPBACK_OFF;
+	ieu->cfg.tx.alarm = 0;
 
 	for (i = 0; i < span->channels; i++) {
 		struct dahdi_chan *const chan = ieu->dahdi.chans[i];
@@ -573,10 +653,12 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 		 * we don't expect people to keep re-configuring their span all
 		 * day long, so a brief interruption is deemed acceptable */
 		e1u_d_shutdown(span);
+		rc = ice1usb_tx_config(ieu);
 		e1u_d_startup(file, span);
-	}
+	} else
+		rc = ice1usb_tx_config(ieu);
 
-	return 0;
+	return rc;
 }
 
 static int e1u_d_chanconfig(struct file *file, struct dahdi_chan *chan,
@@ -602,9 +684,6 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 	int rc;
 
 	ieu_dbg(ieu, "entering %s", __FUNCTION__);
-
-	/* TODO: handle CRC4 vs. non-CRC4 case */
-	//if (span->lineconfig & DAHDI_CONFIG_CRC4)
 
 	/* Ensure we are in the right altsetting */
 	rc = ice1usb_set_altif(ieu, true);
@@ -688,17 +767,20 @@ static int e1u_d_shutdown(struct dahdi_span *span)
 static int e1u_d_maint(struct dahdi_span *span, int cmd)
 {
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
+	int rc = 0;
 
 	ieu_dbg(ieu, "entering %s(%d)", __FUNCTION__, cmd);
 
 	switch (cmd) {
 	case DAHDI_MAINT_NONE:
 		ieu_info(ieu, "Clearing all maint modes\n");
-		/* FIXME */
+		ieu->cfg.tx.ext_loopback = ICE1USB_TX_EXT_LOOPBACK_OFF;
+		rc = ice1usb_tx_config(ieu);
 		break;
-	case DAHDI_MAINT_NETWORKPAYLOADLOOP:
-		ieu_info(ieu, "Turning on network loopback\n");
-		/* FIXME */
+	case DAHDI_MAINT_NETWORKLINELOOP:
+		ieu_info(ieu, "Turning on network line loopback\n");
+		ieu->cfg.tx.ext_loopback = ICE1USB_TX_EXT_LOOPBACK_SAME;
+		rc = ice1usb_tx_config(ieu);
 		break;
 	/* TODO: DAHDI_MAINT_*_DEFECT */
 	default:
@@ -706,7 +788,7 @@ static int e1u_d_maint(struct dahdi_span *span, int cmd)
 		return -ENOSYS;
 	}
 
-	return 0;
+	return rc;
 }
 
 static const struct dahdi_span_ops ice1usb_span_ops = {
