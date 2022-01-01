@@ -85,6 +85,12 @@ struct ice1usb {
 	struct {
 		struct ice1usb_tx_config tx;
 	} cfg;
+	/* last received error interrupt */
+	struct ice1usb_irq_err last_err;
+	struct {
+		uint32_t ovfl;
+		uint32_t unfl;
+	} count;
 	/* enum ice1usb_flags */
 	unsigned long flags;
 	/* feedback flow-control */
@@ -505,6 +511,26 @@ static void iso_out_complete(struct urb *urb)
  * INTERRUPT transfers
  ***********************************************************************/
 
+static uint32_t counter_delta(uint16_t old, uint16_t new)
+{
+	if (new == old)
+		return 0;
+	else if (new > old)
+		return new - old;
+	else
+		return 0xffff - (old - new);
+}
+
+static void ice1usb_update_counters(struct ice1usb *ieu, const struct ice1usb_irq_err *err)
+{
+	ieu->dahdi.span.count.fe += counter_delta(ieu->last_err.align, err->align);
+	ieu->dahdi.span.count.crc4 += counter_delta(ieu->last_err.crc, err->crc);
+	/* no DAHDI general counters for overflows / underflows */
+	ieu->count.ovfl += counter_delta(ieu->last_err.ovfl, err->ovfl);
+	ieu->count.unfl += counter_delta(ieu->last_err.unfl, err->unfl);
+	memcpy(&ieu->last_err, err, sizeof(ieu->last_err));
+}
+
 #define ALL_RED_ALARMS (DAHDI_ALARM_RED | DAHDI_ALARM_LFA | DAHDI_ALARM_LMFA | ICE1USB_ERR_F_LOS)
 
 /* interrupt EP completes: Process and resubmit */
@@ -535,6 +561,7 @@ static void ice1usb_irq_complete(struct urb *urb)
 			ieu->dahdi.span.alarms &= ~ALL_RED_ALARMS;
 			ieu->dahdi.span.alarms |= alarms;
 			dahdi_alarm_notify(&ieu->dahdi.span);
+			ice1usb_update_counters(ieu, err);
 			break;
 		}
 	} else if (urb->status == -ENOENT) {
@@ -783,6 +810,11 @@ static int e1u_d_maint(struct dahdi_span *span, int cmd)
 		rc = ice1usb_tx_config(ieu);
 		break;
 	/* TODO: DAHDI_MAINT_*_DEFECT */
+	/* TODO: DAHDI_MAINT_ALARM_SIM */
+	case DAHDI_RESET_COUNTERS:
+		memset(&ieu->dahdi.span.count, 0, sizeof(ieu->dahdi.span.count));
+		/* don't reset last_err, as we need it to count the _new_ errors */
+		break;
 	default:
 		ieu_info(ieu, "Unknown E1 maint command: %d\n", cmd);
 		return -ENOSYS;
