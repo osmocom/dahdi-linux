@@ -862,7 +862,7 @@ static const struct usb_host_interface *find_altsetting_on(struct usb_interface 
 
 	for (i = 0; i < intf->num_altsetting; i++) {
 		const struct usb_host_interface *alt = &intf->altsetting[i];
-		if (!has_ep_packetsize_zero(alt))
+		if (!has_ep_packetsize_zero(alt) && alt->desc.bNumEndpoints >= 3)
 			return alt;
 	}
 	return NULL;
