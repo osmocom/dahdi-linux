@@ -1278,7 +1278,7 @@ static void t1_check_alarms(struct t1 *wc)
 			wc->alarmcount++;
 	} else
 		wc->alarmcount = 0;
-	if (c & 0x4)
+	if (c & 0x40)
 		alarms |= DAHDI_ALARM_BLUE;
 
 	if (((!wc->span.alarms) && alarms) || 
