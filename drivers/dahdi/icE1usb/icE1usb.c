@@ -684,7 +684,9 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 		 * day long, so a brief interruption is deemed acceptable */
 		e1u_d_shutdown(span);
 		rc = ice1usb_tx_config(ieu);
-		e1u_d_startup(file, span);
+		if (rc < 0)
+			return rc;
+		rc = e1u_d_startup(file, span);
 	} else
 		rc = ice1usb_tx_config(ieu);
 
