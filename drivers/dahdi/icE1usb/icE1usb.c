@@ -710,6 +710,7 @@ static int ice1usb_set_altif(struct ice1usb *ieu, bool on);
 static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 {
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
+	unsigned long flags;
 	unsigned int i;
 	int rc;
 
@@ -718,7 +719,7 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 	/* Ensure we are in the right altsetting */
 	rc = ice1usb_set_altif(ieu, true);
 	if (rc < 0)
-		return rc;
+		goto err;
 
 	if (!test_and_set_bit(ICE1USB_ISOC_RUNNING, &ieu->flags)) {
 		for (i = 0; i < ICE1USB_NUM_URBS; i++) {
@@ -753,6 +754,10 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 		}
 	}
 
+	spin_lock_irqsave(&span->lock, flags);
+	span->alarms &= ~DAHDI_ALARM_NOTOPEN;
+	dahdi_alarm_notify(span);
+	spin_unlock_irqrestore(&span->lock, flags);
 	return 0;
 
 err_irq:
@@ -764,6 +769,11 @@ err_isoc:
 	usb_kill_anchored_urbs(&ieu->anchor.iso_fb);
 	clear_bit(ICE1USB_ISOC_RUNNING, &ieu->flags);
 	ice1usb_set_altif(ieu, false);
+err:
+	spin_lock_irqsave(&span->lock, flags);
+	span->alarms |= DAHDI_ALARM_NOTOPEN;
+	dahdi_alarm_notify(span);
+	spin_unlock_irqrestore(&span->lock, flags);
 	return rc;
 }
 
