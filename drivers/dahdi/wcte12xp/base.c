@@ -43,7 +43,6 @@
 
 #include <linux/slab.h>
 
-#include <stdbool.h>
 #include <dahdi/kernel.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)

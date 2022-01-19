@@ -24,7 +24,6 @@
 #define __WCXB_SPI_H
 
 #include <linux/spi/spi.h>
-#include <stdbool.h>
 
 struct wcxb_spi_transfer {
 	const void	*tx_buf;

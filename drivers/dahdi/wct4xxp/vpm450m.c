@@ -28,7 +28,6 @@
 #include <linux/version.h>
 
 #include <dahdi/kernel.h>
-#include <stdbool.h>
 
 #include "vpm450m.h"
 #include <oct612x.h>

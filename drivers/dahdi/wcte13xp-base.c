@@ -35,7 +35,6 @@
 #include <linux/sched.h>
 #include <linux/crc32.h>
 
-#include <stdbool.h>
 #include <dahdi/kernel.h>
 
 #include "wct4xxp/wct4xxp.h"	/* For certain definitions */

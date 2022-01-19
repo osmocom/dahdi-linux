@@ -42,7 +42,6 @@
 #include <linux/crc32.h>
 #include <linux/slab.h>
 
-#include <stdbool.h>
 #include <dahdi/kernel.h>
 
 #include "wct4xxp.h"

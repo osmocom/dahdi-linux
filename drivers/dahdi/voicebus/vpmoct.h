@@ -30,7 +30,6 @@
 #include <linux/timer.h>
 #include "dahdi/kernel.h"
 
-#include <stdbool.h>
 
 #define VPMOCT_FIRM_HEADER_LEN 32
 #define VPMOCT_BOOT_RAM_LEN 128
