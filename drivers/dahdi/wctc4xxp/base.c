@@ -39,7 +39,6 @@
 #include <linux/etherdevice.h>
 #include <linux/timer.h>
 
-#include <stdbool.h>
 
 #include <dahdi/kernel.h>
 

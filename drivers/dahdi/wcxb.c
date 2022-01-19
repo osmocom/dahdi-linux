@@ -36,7 +36,6 @@
 
 #include <dahdi/kernel.h>
 
-#include <stdbool.h>
 
 #include "wcxb.h"
 #include "wcxb_spi.h"

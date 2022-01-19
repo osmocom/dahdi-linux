@@ -34,7 +34,6 @@
 #include <linux/firmware.h>
 #include <linux/crc32.h>
 
-#include <stdbool.h>
 
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)

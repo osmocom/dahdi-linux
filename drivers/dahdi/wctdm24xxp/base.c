@@ -54,7 +54,6 @@ Tx Gain - W/Pre-Emphasis: -23.99 to 0.00 db
 #include <linux/crc32.h>
 #include <linux/slab.h>
 
-#include <stdbool.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 30)
 /* Define this if you would like to load the modules in parallel.  While this

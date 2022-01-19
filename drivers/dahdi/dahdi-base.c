@@ -86,7 +86,6 @@
 
 #include "hpec/hpec_user.h"
 
-#include <stdbool.h>
 
 #if defined(EMPULSE) && defined(EMFLASH)
 #error "You cannot define both EMPULSE and EMFLASH"
