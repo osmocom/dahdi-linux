@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 /* Osmocom icE1usb driver
- * Copyright (C) 2020 by Harald Welte <laforge@osmocom.org>
+ * Copyright (C) 2020-2022 by Harald Welte <laforge@osmocom.org>
  * inspired by osmo-e1d by Sylvain Munaut */
 
 /*  The Osmocom icE1usb is a modern, software-defined open hardware and
@@ -52,15 +52,39 @@
 #define ieu_err(x, fmt, args ...) \
 	dev_err(&((x)->usb_intf->dev), fmt, ## args)
 
+static const struct usb_device_id ice1usb_products[] = {
+	{
+		USB_DEVICE(0x1d50, 0x6145),
+	},
+	{}
+};
+
 /***********************************************************************
 * data structures
 ***********************************************************************/
+
+/* per-device global state */
+struct ice1usb_gpsdo {
+	/* USB device we operate on */
+	struct usb_device *usb_dev;
+	struct usb_interface *usb_intf;
+
+	struct e1usb_gpsdo_status gpsdo_status;
+	char fw_build[128];
+
+	/* is the device still present (true) or already absent/unplugged (false) */
+	bool present;
+	/* spinlock protecting concurrent access to fc, {read,write}chunk_idx, ... */
+	spinlock_t lock;
+};
+
 
 enum ice1usb_flags {
 	ICE1USB_ISOC_RUNNING,
 	ICE1USB_IRQ_RUNNING,
 };
 
+/* per-interface state */
 struct ice1usb {
 	/* USB device and interface we operate on */
 	struct usb_device *usb_dev;
@@ -197,11 +221,13 @@ static const char *tx_ext_loopback_str(enum ice1usb_tx_ext_loopback ext_lb)
 }
 
 #define USB_RT_VEND_IF (USB_TYPE_VENDOR | USB_RECIP_INTERFACE)
+#define USB_RT_VEND_DEV (USB_TYPE_VENDOR | USB_RECIP_DEVICE)
 
 /* synchronous request, may block up to 1s, only called from process context! */
 static int ice1usb_tx_config(struct ice1usb *ieu)
 {
 	int rc;
+	uint8_t if_num = ieu->usb_intf->cur_altsetting->desc.bInterfaceNumber;
 
 	ieu_info(ieu, "TX-CONFIG (crc4=%s, timing=%s, ext_loopback=%s, tx_yellow_alarm=%u)\n",
 		 tx_mode_str(ieu->cfg.tx.mode), tx_timing_str(ieu->cfg.tx.timing),
@@ -209,7 +235,7 @@ static int ice1usb_tx_config(struct ice1usb *ieu)
 
 	rc = usb_control_msg(ieu->usb_dev, usb_sndctrlpipe(ieu->usb_dev, 0),
 				ICE1USB_INTF_SET_TX_CFG, USB_RT_VEND_IF,
-				0, 0, &ieu->cfg.tx, sizeof(ieu->cfg.tx),
+				0, if_num, &ieu->cfg.tx, sizeof(ieu->cfg.tx),
 				USB_CTRL_SET_TIMEOUT);
 	if (rc < 0)
 		return rc;
@@ -849,7 +875,327 @@ static const struct dahdi_span_ops ice1usb_span_ops = {
 };
 
 /***********************************************************************
- * kernel USB integration / probing 
+* USB GPSDO driver (sysfs files) - NOT _interface_ driver
+***********************************************************************/
+
+static void ice1usb_gpsdo_free(struct ice1usb_gpsdo *e1d)
+{
+	usb_put_dev(e1d->usb_dev);
+	kfree(e1d);
+}
+
+/* The GPS-DO exists only once for the entire USB device, while all the E1 related
+ * bits exist once per USB interface! */
+
+/* update our internal, cached GPS-DO state */
+static int e1u_update_gpsdo(struct ice1usb_gpsdo *e1d)
+{
+	uint8_t if_num = e1d->usb_intf->cur_altsetting->desc.bInterfaceNumber;
+	int rc;
+
+	rc = usb_control_msg(e1d->usb_dev, usb_rcvctrlpipe(e1d->usb_dev, 0),
+				ICE1USB_INTF_GET_GPSDO_STATUS, USB_DIR_IN | USB_RT_VEND_IF,
+				0, if_num, &e1d->gpsdo_status, sizeof(e1d->gpsdo_status),
+				USB_CTRL_SET_TIMEOUT);
+	if (rc < 0) {
+		dev_err(&e1d->usb_intf->dev, "Error during GPSDO CTRL GET transfer: %d\n", rc);
+		return rc;
+	}
+	if (rc != sizeof(e1d->gpsdo_status)) {
+		dev_err(&e1d->usb_dev->dev, "Short read during GPSDO CTRL GET transfer: %d\n", rc);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static const char *gpsdo_mode_str(enum ice1usb_gpsdo_mode mode)
+{
+	switch (mode) {
+	case ICE1USB_GPSDO_MODE_DISABLED:
+		return "disabled";
+	case ICE1USB_GPSDO_MODE_AUTO:
+		return "auto";
+	default:
+		return "invalid";
+	}
+}
+
+static const char *gpsdo_antenna_state_str(enum ice1usb_gpsdo_antenna_state st)
+{
+	switch (st) {
+	case ICE1USB_GPSDO_ANT_UNKNOWN:
+		return "unknown";
+	case ICE1USB_GPSDO_ANT_OK:
+		return "ok";
+	case ICE1USB_GPSDO_ANT_OPEN:
+		return "open";
+	case ICE1USB_GPSDO_ANT_SHORT:
+		return "short";
+	default:
+		return "invalid";
+	}
+}
+
+static const char *gpsdo_state_str(enum ice1usb_gpsdo_state st)
+{
+	switch (st) {
+	case ICE1USB_GPSDO_STATE_DISABLED:
+		return "disabled";
+	case ICE1USB_GPSDO_STATE_CALIBRATE:
+		return "calibrate";
+	case ICE1USB_GPSDO_STATE_HOLD_OVER:
+		return "hold_over";
+	case ICE1USB_GPSDO_STATE_TUNE_COARSE:
+		return "tune_coarse";
+	case ICE1USB_GPSDO_STATE_TUNE_FINE:
+		return "tune_fine";
+	default:
+		return "invalid";
+	}
+}
+
+
+static ssize_t e1u_gpsdo_mode_show(struct device *dev, struct device_attribute *attr,
+				   char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	int rc = e1u_update_gpsdo(e1d);
+	if (rc < 0)
+		return rc;
+	return sprintf(buf, "%s\n", gpsdo_mode_str(e1d->gpsdo_status.mode));
+}
+
+static ssize_t e1u_gpsdo_mode_store(struct device *dev, struct device_attribute *attr,
+				    const char *buf, size_t count)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	uint8_t if_num = e1d->usb_intf->cur_altsetting->desc.bInterfaceNumber;
+	uint16_t imode;
+	int rc;
+
+	if (!strcmp(buf, "disabled"))
+		imode = ICE1USB_GPSDO_MODE_DISABLED;
+	else if (!strcmp(buf, "auto"))
+		imode = ICE1USB_GPSDO_MODE_AUTO;
+	else
+		return -EINVAL;
+
+	rc = usb_control_msg(e1d->usb_dev, usb_sndctrlpipe(e1d->usb_dev, 0),
+				ICE1USB_INTF_SET_GPSDO_MODE, USB_RT_VEND_IF,
+				imode, if_num, NULL, 0, USB_CTRL_SET_TIMEOUT);
+	if (rc < 0) {
+		dev_err(&e1d->usb_intf->dev, "Error during GPSDO CTRL SET transfer: %d\n", rc);
+		return -EIO;
+	}
+	e1d->gpsdo_status.mode = imode;
+
+	return count;
+}
+
+static DEVICE_ATTR(gpsdo_mode, 0644, e1u_gpsdo_mode_show, e1u_gpsdo_mode_store);
+
+static ssize_t e1u_gpsdo_ant_state_show(struct device *dev,
+					 struct device_attribute *attr, char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	int rc = e1u_update_gpsdo(e1d);
+	if (rc < 0)
+		return rc;
+	return sprintf(buf, "%s\n", gpsdo_antenna_state_str(e1d->gpsdo_status.antenna_state));
+}
+
+static DEVICE_ATTR(gpsdo_antenna_state, 0444, e1u_gpsdo_ant_state_show, NULL);
+
+static ssize_t e1u_gpsdo_state_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	int rc = e1u_update_gpsdo(e1d);
+	if (rc < 0)
+		return rc;
+	return sprintf(buf, "%s\n", gpsdo_state_str(e1d->gpsdo_status.state));
+}
+
+static DEVICE_ATTR(gpsdo_state, 0444, e1u_gpsdo_state_show, NULL);
+
+static ssize_t e1u_gpsdo_valid_fix_show(struct device *dev,
+					struct device_attribute *attr, char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	int rc = e1u_update_gpsdo(e1d);
+	if (rc < 0)
+		return rc;
+	return sprintf(buf, "%u\n", e1d->gpsdo_status.valid_fix);
+}
+
+static DEVICE_ATTR(gpsdo_valid_fix, 0444, e1u_gpsdo_valid_fix_show, NULL);
+
+
+static ssize_t e1u_gpsdo_tune_coarse_show(struct device *dev,
+					  struct device_attribute *attr, char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	int rc = e1u_update_gpsdo(e1d);
+	if (rc < 0)
+		return rc;
+	return sprintf(buf, "%u\n", e1d->gpsdo_status.tune.coarse);
+}
+
+/* TODO: set tuning */
+static DEVICE_ATTR(gpsdo_tune_coarse, 0444, e1u_gpsdo_tune_coarse_show, NULL);
+
+
+static ssize_t e1u_gpsdo_tune_fine_show(struct device *dev,
+					struct device_attribute *attr, char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	int rc = e1u_update_gpsdo(e1d);
+	if (rc < 0)
+		return rc;
+	return sprintf(buf, "%u\n", e1d->gpsdo_status.tune.fine);
+}
+
+/* TODO: set tuning */
+static DEVICE_ATTR(gpsdo_tune_fine, 0444, e1u_gpsdo_tune_fine_show, NULL);
+
+static ssize_t e1u_gpsdo_freq_est_show(struct device *dev,
+					struct device_attribute *attr, char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	int rc = e1u_update_gpsdo(e1d);
+	if (rc < 0)
+		return rc;
+	return sprintf(buf, "%u\n", e1d->gpsdo_status.freq_est);
+}
+
+static DEVICE_ATTR(gpsdo_freq_est, 0444, e1u_gpsdo_freq_est_show, NULL);
+
+static ssize_t e1u_fw_build_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+
+	return sprintf(buf, "%s\n", e1d->fw_build);
+}
+
+static DEVICE_ATTR(fw_build, 0444, e1u_fw_build_show, NULL);
+
+static void create_sysfs_files(struct ice1usb_gpsdo *e1d)
+{
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_mode);
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_antenna_state);
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_state);
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_valid_fix);
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_tune_coarse);
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_tune_fine);
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_freq_est);
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_fw_build);
+}
+
+static void remove_sysfs_files(struct ice1usb_gpsdo *e1d)
+{
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_mode);
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_antenna_state);
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_state);
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_valid_fix);
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_tune_coarse);
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_tune_fine);
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_freq_est);
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_fw_build);
+}
+
+static int ice1usb_gpsdo_probe(struct usb_interface *intf, const struct usb_device_id *prod)
+{
+	struct usb_device *usb_dev = usb_get_dev(interface_to_usbdev(intf));
+	const struct usb_interface_descriptor *ifdesc = &intf->altsetting->desc;
+	struct ice1usb_gpsdo *e1d;
+	int ret = -ENODEV;
+	int rc;
+
+	dev_dbg(&intf->dev, "entering %s", __FUNCTION__);
+
+	if (ifdesc->bInterfaceClass != 0xff || ifdesc->bInterfaceSubClass != 0xE1) {
+		dev_dbg(&intf->dev, "Unsupported Interface Class/SubClass %02x/%02x",
+			ifdesc->bInterfaceClass, ifdesc->bInterfaceSubClass);
+		ret = -ENODEV;
+		goto error;
+	}
+
+	/* we only support protocol 0 so far */
+	if (ifdesc->bInterfaceProtocol != 0xd0) {
+		ret = -ENODEV;
+		goto error;
+	}
+
+	e1d = kzalloc(sizeof(*e1d), GFP_KERNEL);
+	if (!e1d) {
+		dev_err(&intf->dev, "Out of memory\n");
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	e1d->usb_dev = usb_dev;
+	e1d->usb_intf = intf;
+	e1d->present = true;
+	spin_lock_init(&e1d->lock);
+
+	usb_set_intfdata(intf, e1d);
+
+	/* obtain firmware build information */
+	e1d->fw_build[0] = '\0';
+	rc = usb_control_msg(e1d->usb_dev, usb_rcvctrlpipe(e1d->usb_dev, 0),
+				ICE1USB_DEV_GET_FW_BUILD, USB_DIR_IN | USB_RT_VEND_DEV,
+				0, 0, e1d->fw_build, sizeof(e1d->fw_build), USB_CTRL_SET_TIMEOUT);
+	if (rc < 0) {
+		dev_err(&e1d->usb_intf->dev, "Error during FW BUILD CTRL GET transfer: %d\n", rc);
+		ret = rc;
+		goto error_free;
+	}
+	e1d->fw_build[sizeof(e1d->fw_build)-1] = '\0';
+	dev_info(&e1d->usb_intf->dev, "icE1usb firmware build: '%s'\n", e1d->fw_build);
+
+	create_sysfs_files(e1d);
+
+	return 0;
+
+error_free:
+	usb_set_intfdata(intf, NULL);
+	kfree(e1d);
+error:
+	usb_put_dev(usb_dev);
+	return ret;
+}
+
+static void ice1usb_gpsdo_disconnect(struct usb_interface *intf)
+{
+	struct ice1usb_gpsdo *e1d = usb_get_intfdata(intf);
+
+	dev_dbg(&intf->dev, "entering %s", __FUNCTION__);
+
+	if (!e1d)
+		return;
+
+	/* avoid any shutdown code from submitting further I/O */
+	e1d->present = false;
+
+	remove_sysfs_files(e1d);
+
+	usb_set_intfdata(intf, NULL);
+
+	ice1usb_gpsdo_free(e1d);
+}
+
+
+static struct usb_driver ice1usb_gpsdo_driver = {
+	.name = "icE1usb-GPSDO",
+	.id_table = ice1usb_products,
+	.probe = ice1usb_gpsdo_probe,
+	.disconnect = ice1usb_gpsdo_disconnect,
+};
+
+/***********************************************************************
+ * kernel USB integration / probing
  ***********************************************************************/
 
 /* does the given altsetting contain an EP with wMaxPacketSize == 0 ? */
@@ -989,6 +1335,10 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 		return -ENODEV;
 	}
 
+	/* we only support protocol 0 so far */
+	if (ifdesc->bInterfaceProtocol != 0x00)
+		return -ENODEV;
+
 	ieu = kzalloc(sizeof(*ieu), GFP_KERNEL);
 	if (!ieu) {
 		dev_err(&intf->dev, "Out of memory\n");
@@ -1119,13 +1469,6 @@ static int ice1usb_resume(struct usb_interface *intf)
 }
 #endif
 
-static const struct usb_device_id ice1usb_products[] = {
-	{
-		USB_DEVICE(0x1d50, 0x6145),
-	},
-	{}
-};
-
 static struct usb_driver ice1usb_driver = {
 	.name = "icE1usb",
 	.id_table = ice1usb_products,
@@ -1135,7 +1478,33 @@ static struct usb_driver ice1usb_driver = {
 	//.resume = ice1usb_resume,
 };
 
-module_usb_driver(ice1usb_driver);
+
+/* cannot use module_usb_driver() as we have both E1 and GPS-DO drivers */
+static int __init __ice1usb_init(void)
+{
+	int rc;
+
+	rc = usb_register_driver(&ice1usb_gpsdo_driver, THIS_MODULE, KBUILD_MODNAME);
+	if (rc < 0)
+		return rc;
+
+	rc = usb_register_driver(&ice1usb_driver, THIS_MODULE, KBUILD_MODNAME);
+	if (rc < 0) {
+		usb_deregister(&ice1usb_gpsdo_driver);
+		return rc;
+	}
+
+	return rc;
+}
+
+static void __exit __ice1usb_exit(void)
+{
+	usb_deregister(&ice1usb_gpsdo_driver);
+	usb_deregister(&ice1usb_driver);
+}
+
+module_init(__ice1usb_init);
+module_exit(__ice1usb_exit);
 
 MODULE_AUTHOR("Harald Welte <laforge@osmocom.org>");
 MODULE_DESCRIPTION("Osmocom icE1usb USB E1 interface");
