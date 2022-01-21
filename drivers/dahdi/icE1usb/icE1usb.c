@@ -209,7 +209,8 @@ static int ice1usb_tx_config(struct ice1usb *ieu)
 
 	rc = usb_control_msg(ieu->usb_dev, usb_sndctrlpipe(ieu->usb_dev, 0),
 				ICE1USB_INTF_SET_TX_CFG, USB_RT_VEND_IF,
-				0, 0, &ieu->cfg.tx, sizeof(ieu->cfg.tx), 1000);
+				0, 0, &ieu->cfg.tx, sizeof(ieu->cfg.tx),
+				USB_CTRL_SET_TIMEOUT);
 	if (rc < 0)
 		return rc;
 	if (rc != sizeof(ieu->cfg.tx))
