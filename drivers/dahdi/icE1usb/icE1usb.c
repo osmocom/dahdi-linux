@@ -1013,6 +1013,8 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 		dev_err(&intf->dev, "Cannot find ON altsetting");
 		goto error;
 	}
+	dev_info(&intf->dev, "altsetting off=%u, on=%u\n",
+		 ieu->alt_off->desc.bAlternateSetting, ieu->alt_on->desc.bAlternateSetting);
 
 	/* locate ON / OFF altsettings */
 	if (find_endpoints(ieu, ieu->alt_on) < 4) {
@@ -1035,6 +1037,7 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	//ddev->location = USB_BUS_PATH;
 
 	dspan = &ieu->dahdi.span;
+	/* TODO: include USB path info? */
 	snprintf(dspan->name, sizeof(dspan->name), "icE1usb/1/%d",
 		 ieu->alt_on->desc.bInterfaceNumber); //TDOO: device != 1
 	snprintf(dspan->desc, sizeof(dspan->desc), "Osmocom icE1USB Card 1 Span %d",
