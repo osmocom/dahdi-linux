@@ -80,6 +80,7 @@
  * support.
  */
 #define CONFIG_DAHDI_NET
+#define CONFIG_DAHDI_PPP
 
 /*
  * Uncomment for Generic PPP support (i.e. DAHDIRAS)
@@ -187,7 +188,7 @@
 /*
  * Creates an interface for mirroring the raw channel data out to a pseudo-chan
  */
-/* #define CONFIG_DAHDI_MIRROR */
+#define CONFIG_DAHDI_MIRROR
 
 /*
  * Adds support for conference links. There are some non-Asterisk users of this
