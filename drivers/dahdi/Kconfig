@@ -264,3 +264,16 @@ config DAHDI_ICE1USB
 
 
 source "drivers/dahdi/xpp/Kconfig"
+
+config DAHDI_ZAPHFC
+	tristate "HFC-S DAHDI Driver"
+	depends on DAHDI && PCI
+	default DAHDI
+	---help---
+	  This driver provides DAHDI support for various HFC-S single-port
+          ISDN (BRI) cards.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called zaphfc.
+
+	  If unsure, say Y.
