@@ -1,5 +1,20 @@
 DAHDI Telephony Interface Driver
 =================================
+Fork by Osmocom, re-introduces support for old hardware and
+adds support for Osmocom icE1usb adapter.
+
+Additional drivers:
+- icE1usb:
+  * Osmocom icE1usb
+- wcte11xp:
+  * Digium TE11xP: PCI single-port T1/E1 card
+- wcte12xp:
+  * Digium TE12xP: PCI single-port T1/E1 card
+- zaphfc:
+  * CologneChip HFC-S-based PCI cards
+
+-----------------
+
 Asterisk Development Team <asteriskteam@digium.com>
 $Revision$, $Date$
 
