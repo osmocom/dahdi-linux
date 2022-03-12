@@ -35,7 +35,7 @@
 
 #include "ice1usb_proto.h"
 
-#define VERSION "0.1"
+#define VERSION "0.2"
 
 /* number of isochronous frames per URB */
 #define ICE1USB_MAX_ISOC_FRAMES 	4
@@ -756,19 +756,19 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 						     iso_in_complete, GFP_KERNEL);
 			if (rc) {
 				ieu_err(ieu, "error submitting IN ep URB %u (%d)", i, rc);
-				goto err_isoc;
+				goto err_isoc_in;
 			}
 			rc = ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_fb, &ieu->anchor.iso_fb,
 						     iso_fb_complete, GFP_KERNEL);
 			if (rc) {
 				ieu_err(ieu, "error submitting FB ep URB %u (%d)", i, rc);
-				goto err_isoc;
+				goto err_isoc_fb;
 			}
 			rc = ice1usb_submit_isoc_urb(ieu, ieu->ep.iso_out, &ieu->anchor.iso_out,
 						     iso_out_complete, GFP_KERNEL);
 			if (rc) {
 				ieu_err(ieu, "error submitting OUT ep URB %u (%d)", i, rc);
-				goto err_isoc;
+				goto err_isoc_out;
 			}
 		}
 	}
@@ -792,10 +792,12 @@ static int e1u_d_startup(struct file *file, struct dahdi_span *span)
 err_irq:
 	usb_kill_anchored_urbs(&ieu->anchor.irq);
 	clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags);
-err_isoc:
-	usb_kill_anchored_urbs(&ieu->anchor.iso_in);
 	usb_kill_anchored_urbs(&ieu->anchor.iso_out);
+err_isoc_out:
 	usb_kill_anchored_urbs(&ieu->anchor.iso_fb);
+err_isoc_fb:
+	usb_kill_anchored_urbs(&ieu->anchor.iso_in);
+err_isoc_in:
 	clear_bit(ICE1USB_ISOC_RUNNING, &ieu->flags);
 	ice1usb_set_altif(ieu, false);
 err:
@@ -813,13 +815,14 @@ static int e1u_d_shutdown(struct dahdi_span *span)
 
 	ieu_dbg(ieu, "entering %s", __FUNCTION__);
 
-	clear_bit(ICE1USB_ISOC_RUNNING, &ieu->flags);
-	clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags);
+	if (test_and_clear_bit(ICE1USB_ISOC_RUNNING, &ieu->flags)) {
+		usb_kill_anchored_urbs(&ieu->anchor.iso_in);
+		usb_kill_anchored_urbs(&ieu->anchor.iso_out);
+		usb_kill_anchored_urbs(&ieu->anchor.iso_fb);
+	}
 
-	usb_kill_anchored_urbs(&ieu->anchor.iso_in);
-	usb_kill_anchored_urbs(&ieu->anchor.iso_out);
-	usb_kill_anchored_urbs(&ieu->anchor.iso_fb);
-	usb_kill_anchored_urbs(&ieu->anchor.irq);
+	if (test_and_clear_bit(ICE1USB_IRQ_RUNNING, &ieu->flags))
+		usb_kill_anchored_urbs(&ieu->anchor.irq);
 
 	/* guard against devices unplugged (see ice1usb_disconnect) */
 	if (ieu->present) {
