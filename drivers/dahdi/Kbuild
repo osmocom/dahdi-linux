@@ -6,6 +6,8 @@ obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_DYNAMIC_ETH)	+= dahdi_dynamic_eth.o
 obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_DYNAMIC_ETHMF)	+= dahdi_dynamic_ethmf.o
 obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_TRANSCODE)		+= dahdi_transcode.o
 
+obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_TRUNKDEV)		+= trunkdev/
+
 ifdef CONFIG_USB
 obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_ICE1USB)		+= icE1usb/
 endif

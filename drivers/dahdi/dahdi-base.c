@@ -105,6 +105,7 @@
 #define	UNIT(file) MINOR(file->f_path.dentry->d_inode->i_rdev)
 
 EXPORT_SYMBOL(dahdi_transcode_fops);
+EXPORT_SYMBOL(dahdi_trunkdev_fops);
 EXPORT_SYMBOL(dahdi_init_tone_state);
 EXPORT_SYMBOL(dahdi_mf_tone);
 EXPORT_SYMBOL(__dahdi_mulaw);
@@ -181,6 +182,7 @@ static sumtype *conf_sums_prev;
 
 static struct dahdi_span *master_span;
 struct file_operations *dahdi_transcode_fops = NULL;
+struct file_operations *dahdi_trunkdev_fops = NULL;
 
 
 #ifdef CONFIG_DAHDI_CONFLINK
@@ -523,6 +525,30 @@ static struct dahdi_span *span_find_and_get(int spanno)
 	mutex_unlock(&registration_mutex);
 	return found;
 }
+
+static struct dahdi_span *_find_span_by_name(const char *name)
+{
+	struct dahdi_span *s;
+	list_for_each_entry(s, &span_list, spans_node) {
+		if (!strcmp(s->name, name)) {
+			return s;
+		}
+	}
+	return NULL;
+}
+
+struct dahdi_span *dahdi_span_find_by_name_and_get(const char *name)
+{
+	struct dahdi_span *found;
+
+	mutex_lock(&registration_mutex);
+	found = _find_span_by_name(name);
+	if (found && !get_span(found))
+		found = NULL;
+	mutex_unlock(&registration_mutex);
+	return found;
+}
+EXPORT_SYMBOL(dahdi_span_find_by_name_and_get);
 
 static unsigned int span_count(void)
 {
@@ -3325,6 +3351,24 @@ static int dahdi_open(struct inode *inode, struct file *file)
 			/* dahdi_transcode module should have exported a
 			 * file_operations table. */
 			 WARN_ON(1);
+		}
+		return -ENXIO;
+	}
+	if (unit == DAHDI_TRUNKDEV) {
+		if (!dahdi_trunkdev_fops) {
+			if (request_module("dahdi_trunkdev")) {
+				return -ENXIO;
+			}
+		}
+		if (!try_module_get(dahdi_trunkdev_fops->owner)) {
+			return -ENXIO;
+		}
+		if (dahdi_trunkdev_fops && dahdi_trunkdev_fops->open) {
+			return dahdi_trunkdev_fops->open(inode, file);
+		} else {
+			/* dahdi_trunkdev module should have exported a
+			 * file_operations table. */
+			WARN_ON(1);
 		}
 		return -ENXIO;
 	}

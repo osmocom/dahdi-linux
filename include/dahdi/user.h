@@ -1225,4 +1225,24 @@ static inline void dahdi_copy_string(char *dst, const char *src, unsigned int si
 	*dst = '\0';
 }
 
+struct dahdi_trunkdev_create {
+	char name[40];		/* name of the to-be-created span */
+	//int numchans;
+	int spanno;		/* Span number (filled in by DAHDI) */
+};
+#define DAHDI_TRUNKDEV_CREATE	_IOWR(DAHDI_CODE, 255, struct dahdi_trunkdev_create)
+
+struct dahdi_trunkdev_delete {
+	char name[40];		/* name of the to-be-opened span */
+};
+#define DAHDI_TRUNKDEV_DELETE	_IOWR(DAHDI_CODE, 254, struct dahdi_trunkdev_delete)
+
+struct dahdi_trunkdev_open {
+	char name[40];		/* name of the to-be-opened span */
+	int spanno;		/* Span number (filled in by DAHDI) */
+};
+#define DAHDI_TRUNKDEV_OPEN	_IOWR(DAHDI_CODE, 253, struct dahdi_trunkdev_open)
+
+
+
 #endif /* _DAHDI_USER_H */

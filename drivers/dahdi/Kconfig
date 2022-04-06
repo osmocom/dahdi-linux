@@ -262,6 +262,24 @@ config DAHDI_ICE1USB
 
 	  If unsure, say Y.
 
+config DAHDI_TRUNKDEV
+	tristate "Virtual trunk device support"
+	depends on DAHDI
+	default DAHDI
+	---help---
+	  This driver provides support for spans via a virtual trunk device.
+	  In this driver, DAHDI basically only acts as a compability layer to
+	  multiplex and de-multiplex samples from the individual channels
+	  (timeslots) to/from E1 frames, which are provided/consumed from a
+	  new /dev/dahdi/trunkdev character device.  Actual interfacing with
+	  real or physical hardware is then performed by some userspace process.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called dahdi-trunkdev.
+
+	  If unsure, say Y.
+
+
 
 source "drivers/dahdi/xpp/Kconfig"
 
