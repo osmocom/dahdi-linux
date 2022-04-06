@@ -1216,6 +1216,9 @@ void dahdi_unregister_device(struct dahdi_device *ddev);
 void dahdi_free_device(struct dahdi_device *ddev);
 void dahdi_init_span(struct dahdi_span *span);
 
+/*! Find a span by its name and get a reference */
+struct dahdi_span *dahdi_span_find_by_name_and_get(const char *name);
+
 /*! Allocate / free memory for a transcoder */
 struct dahdi_transcoder *dahdi_transcoder_alloc(int numchans);
 void dahdi_transcoder_free(struct dahdi_transcoder *ztc);
@@ -1295,6 +1298,7 @@ static inline void dahdi_ec_span(struct dahdi_span *span)
 }
 
 extern struct file_operations *dahdi_transcode_fops;
+extern struct file_operations *dahdi_trunkdev_fops;
 
 int dahdi_get_auto_assign_spans(void);
 
@@ -1592,6 +1596,7 @@ struct mutex {
 
 #define	DAHDI_CTL	0
 #define	DAHDI_TRANSCODE	250
+#define	DAHDI_TRUNKDEV	252
 #define	DAHDI_TIMER	253
 #define	DAHDI_CHANNEL	254
 #define	DAHDI_PSEUDO	255
