@@ -1,0 +1,3 @@
+obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_TRUNKDEV) += dahdi-trunkdev.o
+
+dahdi-trunkdev-objs := trunkdev.o frame_fifo.o
