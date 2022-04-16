@@ -9203,7 +9203,7 @@ static void __putbuf_chunk(struct dahdi_chan *ss, unsigned char *rxb, int bytes)
 						buf[ms->readidx[ms->inreadbuf]++] = rxc;
 						/* Pay attention to the possibility of an overrun */
 						if (ms->readidx[ms->inreadbuf] >= ms->blocksize) {
-							if (!ss->span->alarms)
+							if (ss->span && !ss->span->alarms)
 								module_printk(KERN_WARNING, "HDLC Receiver overrun on channel %s (master=%s)\n", ss->name, ss->master->name);
 							abort=DAHDI_EVENT_OVERRUN;
 							/* Force the HDLC state back to frame-search mode */
@@ -9375,7 +9375,7 @@ that the waitqueue is empty. */
 					tasklet_schedule(&ms->ppp_calls);
 				} else
 #endif
-					if (test_bit(DAHDI_FLAGBIT_OPEN, &ms->flags) && !ss->span->alarms) {
+					if (test_bit(DAHDI_FLAGBIT_OPEN, &ms->flags) && ss->span && !ss->span->alarms) {
 						/* Notify the receiver... */
 						__qevent(ss->master, abort);
 					}
@@ -9443,7 +9443,7 @@ static void __dahdi_hdlc_abort(struct dahdi_chan *ss, int event)
 {
 	if (ss->inreadbuf >= 0)
 		ss->readidx[ss->inreadbuf] = 0;
-	if (test_bit(DAHDI_FLAGBIT_OPEN, &ss->flags) && !ss->span->alarms)
+	if (test_bit(DAHDI_FLAGBIT_OPEN, &ss->flags) && ss->span && !ss->span->alarms)
 		__qevent(ss->master, event);
 }
 
