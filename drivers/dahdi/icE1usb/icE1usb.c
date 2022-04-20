@@ -691,9 +691,9 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 		ieu->cfg.tx.mode = ICE1USB_TX_MODE_TS0;
 
 	if (lc->sync > 0)
-		ieu->cfg.tx.timing = ICE1USB_TX_TIME_SRC_LOCAL;
-	else
 		ieu->cfg.tx.timing = ICE1USB_TX_TIME_SRC_REMOTE;
+	else
+		ieu->cfg.tx.timing = ICE1USB_TX_TIME_SRC_LOCAL;
 
 	/* (re-)set to sane defaults */
 	ieu->cfg.tx.ext_loopback = ICE1USB_TX_EXT_LOOPBACK_OFF;
