@@ -161,6 +161,35 @@ static int td_d_shutdown(struct dahdi_span *span)
 	return 0;
 }
 
+static const char *maint2str(int cmd)
+{
+	switch (cmd) {
+	case DAHDI_MAINT_NONE: return "NONE";
+	case DAHDI_MAINT_LOCALLOOP: return "LOCALLOOP";
+	case DAHDI_MAINT_NETWORKPAYLOADLOOP: return "NETWORKPAYLOADLOOP";
+	default: return "UNKNOWN";
+	}
+}
+
+static int td_d_maint(struct dahdi_span *span, int cmd)
+{
+	struct dahdi_trunkdev *td = container_of(span, struct dahdi_trunkdev, dahdi.span);
+
+	switch (cmd) {
+	case DAHDI_MAINT_NONE:
+	case DAHDI_MAINT_LOCALLOOP:
+	case DAHDI_MAINT_NETWORKPAYLOADLOOP:
+		/* we don't need to do anything, as span->maintstat is set by the core,
+		 * just acknowledge those supported modes here */
+		dev_info(&td->dahdi.dev->dev, "Setting maintenance mode to: %s\n", maint2str(cmd));
+		break;
+	default:
+		return -ENOSYS;
+	}
+	return 0;
+}
+
+
 /* called in hard_irq context with chan_lock held */
 static void td_d_sync_tick(struct dahdi_span *span, int is_master)
 {
@@ -178,14 +207,29 @@ static void td_d_sync_tick(struct dahdi_span *span, int is_master)
 		uint8_t frame[32];
 		int rc;
 
-		/* Trunk -> DAHDI direction */
-		rc = frame_fifo_out(&td->from_trunk, frame);
-		if (rc >= 0)
-			_span_demux_one_frame(td, frame);
+		switch (span->maintstat) {
+		case DAHDI_MAINT_NONE:
+			/* Trunk -> DAHDI direction */
+			rc = frame_fifo_out(&td->from_trunk, frame);
+			if (rc >= 0)
+				_span_demux_one_frame(td, frame);
 
-		/* Trunk <- DAHDI direction */
-		_span_mux_one_frame(td, frame);
-		frame_fifo_in(&td->to_trunk, frame);
+			/* Trunk <- DAHDI direction */
+			_span_mux_one_frame(td, frame);
+			frame_fifo_in(&td->to_trunk, frame);
+			break;
+		case DAHDI_MAINT_LOCALLOOP:
+			/* Loop frame from DAHDI back to itself */
+			_span_mux_one_frame(td, frame);
+			_span_demux_one_frame(td, frame);
+			break;
+		case DAHDI_MAINT_NETWORKPAYLOADLOOP:
+			/* Loop frame from trunkdev back to itself */
+			rc = frame_fifo_out(&td->from_trunk, frame);
+			if (rc >= 0)
+				frame_fifo_in(&td->to_trunk, frame);
+			break;
+		}
 	}
 	/* wake up any processes doing blocking read or waiting in poll */
 	wake_up_interruptible(&td->waitq);
@@ -197,7 +241,7 @@ static const struct dahdi_span_ops trunkdev_span_ops = {
 	.chanconfig = td_d_chanconfig,
 	.startup = td_d_startup,
 	.shutdown = td_d_shutdown,
-	//.maint = td_d_maint,
+	.maint = td_d_maint,
 	.sync_tick = td_d_sync_tick,
 };
 
