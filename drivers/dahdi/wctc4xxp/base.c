@@ -637,7 +637,11 @@ wctc4xxp_net_register(struct wcdte *wc)
 		return -ENOMEM;
 	priv = netdev_priv(netdev);
 	priv->wc = wc;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
+	__dev_addr_set(netdev, our_mac, sizeof(our_mac));
+#else
 	memcpy(netdev->dev_addr, our_mac, sizeof(our_mac));
+#endif
 
 #	ifdef HAVE_NET_DEVICE_OPS
 	netdev->netdev_ops = &wctc4xxp_netdev_ops;
