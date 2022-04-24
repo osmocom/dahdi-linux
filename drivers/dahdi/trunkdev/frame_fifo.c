@@ -53,6 +53,15 @@ void frame_fifo_init(struct frame_fifo *fifo, unsigned int threshold,
 	spin_lock_init(&fifo->lock);
 }
 
+/*! Flush (drop) the entire content of the FIFO */
+void frame_fifo_flush(struct frame_fifo *fifo)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&fifo->lock, flags);
+	fifo->next_out = fifo->next_in;
+	spin_unlock_irqrestore(&fifo->lock, flags);
+}
+
 #define FIFO_BUF_END(f)	((f)->buf + sizeof((f)->buf))
 
 /*! put one received frames into the FIFO.

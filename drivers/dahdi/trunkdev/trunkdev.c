@@ -500,6 +500,9 @@ static long dahdi_unlocked_ioctl(struct file *file, unsigned int cmd, unsigned l
 		span->alarms &= ~(ALL_RY_ALARMS|DAHDI_ALARM_LOS);
 		dahdi_alarm_notify(span);
 		spin_unlock_irqrestore(&span->lock, flags);
+		/* FIFO should be full at this point, let's flush it as now we actually
+		 * have a receiver */
+		frame_fifo_flush(&td->to_trunk);
 
 		open.spanno = span->spanno;
 		if (copy_to_user((__user void *) data, &open, sizeof(open)))
