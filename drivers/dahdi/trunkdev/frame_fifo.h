@@ -20,6 +20,8 @@ void frame_fifo_init(struct frame_fifo *fifo, unsigned int threshold,
 		     void (*threshold_cb)(struct frame_fifo *fifo, unsigned int frames, void *priv),
 		     void *priv);
 
+void frame_fifo_flush(struct frame_fifo *fifo);
+
 /* number of frames currently available in FIFO */
 static inline unsigned int __frame_fifo_frames(struct frame_fifo *fifo)
 {
