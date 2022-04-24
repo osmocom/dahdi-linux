@@ -58,6 +58,13 @@
 
 #include <linux/poll.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
+#include <linux/compiler_attributes.h>
+#endif
+#ifndef fallthrough
+#define fallthrough do {} while (0)  /* fallthrough */
+#endif
+
 #ifdef CONFIG_PCI
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 #include <linux/pci.h>

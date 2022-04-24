@@ -7961,7 +7961,7 @@ static inline void __dahdi_process_getaudio_chunk(struct dahdi_chan *ss, unsigne
 			memset(getlin, 0, DAHDI_CHUNKSIZE * sizeof(short));
 			txb[0] = DAHDI_LIN2X(0, ms);
 			memset(txb + 1, txb[0], DAHDI_CHUNKSIZE - 1);
-			/* fall through to normal conf mode */
+			fallthrough;
 		case DAHDI_CONF_CONF:	/* Normal conference mode */
 			if (is_pseudo_chan(ms)) /* if pseudo-channel */
 			   {
@@ -7985,7 +7985,7 @@ static inline void __dahdi_process_getaudio_chunk(struct dahdi_chan *ss, unsigne
 				memset(txb + 1, txb[0], DAHDI_CHUNKSIZE - 1);
 				break;
 		 	   }
-			/* fall through */
+			fallthrough;
 		case DAHDI_CONF_CONFMON:	/* Conference monitor mode */
 			if (ms->confmode & DAHDI_CONF_LISTENER) {
 				/* Subtract out last sample written to conf */
@@ -8524,7 +8524,7 @@ static void __dahdi_hooksig_pvt(struct dahdi_chan *chan, enum dahdi_rxsig rxsig)
 			break;
 		}
 #endif
-		/* fall through intentionally */
+		fallthrough;
 	   case DAHDI_SIG_FXSGS:  /* FXS Groundstart */
 		if (rxsig == DAHDI_RXSIG_ONHOOK) {
 			chan->ringdebtimer = RING_DEBOUNCE_TIME;
@@ -8543,7 +8543,7 @@ static void __dahdi_hooksig_pvt(struct dahdi_chan *chan, enum dahdi_rxsig rxsig)
 				chan->gotgs = 1;
 			}
 		}
-		/* fall through intentionally */
+		fallthrough;
 	   case DAHDI_SIG_FXOLS: /* FXO Loopstart */
 	   case DAHDI_SIG_FXOKS: /* FXO Kewlstart */
 		switch(rxsig) {
@@ -8643,7 +8643,7 @@ void dahdi_rbsbits(struct dahdi_chan *chan, int cursig)
 			__dahdi_hooksig_pvt(chan, DAHDI_RXSIG_START);
 			break;
 		}
-		/* Fall through */
+		fallthrough;
 	    case DAHDI_SIG_EM_E1:
 	    case DAHDI_SIG_FXOLS: /* FXO Loopstart */
 	    case DAHDI_SIG_FXOKS: /* FXO Kewlstart */
@@ -8661,7 +8661,7 @@ void dahdi_rbsbits(struct dahdi_chan *chan, int cursig)
 		break;
 	   case DAHDI_SIG_FXSKS:  /* FXS Kewlstart */
 	   case DAHDI_SIG_FXSGS:  /* FXS Groundstart */
-		/* Fall through */
+		fallthrough;
 	   case DAHDI_SIG_FXSLS:
 		if (!(cursig & DAHDI_BBIT)) {
 			/* Check for ringing first */
@@ -9090,7 +9090,7 @@ static inline void __dahdi_process_putaudio_chunk(struct dahdi_chan *ss, unsigne
 				memcpy(ss->putlin, putlin, DAHDI_CHUNKSIZE * sizeof(short));
 				break;
 			   }
-			/* fall through */
+			fallthrough;
 		case DAHDI_CONF_CONFANN:  /* Conference with announce */
 			if (ms->confmode & DAHDI_CONF_TALKER) {
 				/* Store temp value */
