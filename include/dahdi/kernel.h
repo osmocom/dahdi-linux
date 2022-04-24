@@ -66,6 +66,10 @@
 #endif
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#define PDE_DATA(i)	pde_data(i)
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29)
 #define HAVE_NET_DEVICE_OPS
 #endif
