@@ -3675,6 +3675,7 @@ static DEFINE_PCI_DEVICE_TABLE(b4xx_ids) =
 	{0x1397, 0x16b8, 0x1397, 0xb562, 0, 0, (unsigned long)&hfc8s_BN},
 	{0x1397, 0x16b8, 0x1397, 0xb56b, 0, 0, (unsigned long)&hfc8s_BN},
 	{0x1397, 0x08b4, 0x1397, 0xb540, 0, 0, (unsigned long)&hfc4s_SW},
+	{0x1397, 0x08b4, 0x1397, 0xb742, 0, 0, (unsigned long)&hfc4s_SW},
 	{0x1397, 0x08b4, 0x1397, 0x08b4, 0, 0, (unsigned long)&hfc4s_EV},
 	{0, }
 
