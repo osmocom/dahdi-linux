@@ -135,6 +135,18 @@ static struct devtype wcb43xp = {"Wildcard B430P", .ports = 4,
 					.card_type = B430P};
 static struct devtype wcb23xp = {"Wildcard B230P", .ports = 2,
 					.card_type = B230P};
+static struct devtype hfc2s =	 {"HFC-2S Junghanns.NET duoBRI PCI", .ports = 2, .card_type = DUOBRI };
+static struct devtype hfc4s =	 {"HFC-4S Junghanns.NET quadBRI PCI", .ports = 4, .card_type = QUADBRI };
+static struct devtype hfc8s =	 {"HFC-8S Junghanns.NET octoBRI PCI", .ports = 8, .card_type = OCTOBRI };
+static struct devtype hfc2s_OV = {"OpenVox B200P", .ports = 2, .card_type = B200P_OV };
+static struct devtype hfc4s_OV = {"OpenVox B400P", .ports = 4, .card_type = B400P_OV };
+static struct devtype hfc8s_OV = {"OpenVox B800P", .ports = 8, .card_type = B800P_OV };
+static struct devtype hfc2s_BN = {"BeroNet BN2S0", .ports = 2, .card_type = BN2S0 };
+static struct devtype hfc4s_BN = {"BeroNet BN4S0", .ports = 4, .card_type = BN4S0 };
+static struct devtype hfc8s_BN = {"BeroNet BN8S0", .ports = 8, .card_type = BN8S0 };
+static struct devtype hfc4s_SW = {"Swyx 4xS0 SX2 QuadBri", .ports = 4, .card_type = BSWYX_SX2 };
+static struct devtype hfc4s_EV = {"CCD HFC-4S Eval. Board", .ports = 4,
+					.card_type = QUADBRI_EVAL };
 
 #define IS_B430P(card) ((card)->card_type == B430P)
 #define IS_B230P(card) ((card)->card_type == B230P)
@@ -3646,6 +3658,24 @@ static DEFINE_PCI_DEVICE_TABLE(b4xx_ids) =
 	{0xd161, 0x8015, PCI_ANY_ID, PCI_ANY_ID, 0, 0, (unsigned long)&wcb43xp},
 	{0xd161, 0x8016, PCI_ANY_ID, PCI_ANY_ID, 0, 0, (unsigned long)&wcb23xp},
 	{0xd161, 0x8017, PCI_ANY_ID, PCI_ANY_ID, 0, 0, (unsigned long)&wcb23xp},
+	{0x1397, 0x16b8, 0x1397, 0xb552, 0, 0, (unsigned long)&hfc8s},
+	{0x1397, 0x16b8, 0x1397, 0xb55b, 0, 0, (unsigned long)&hfc8s},
+	{0x1397, 0x08b4, 0x1397, 0xb520, 0, 0, (unsigned long)&hfc4s},
+	{0x1397, 0x08b4, 0x1397, 0xb550, 0, 0, (unsigned long)&hfc4s},
+	{0x1397, 0x08b4, 0x1397, 0xb752, 0, 0, (unsigned long)&hfc4s},
+	{0x1397, 0x08b4, 0x1397, 0xb556, 0, 0, (unsigned long)&hfc2s},
+	{0x1397, 0x08b4, 0x1397, 0xe884, 0, 0, (unsigned long)&hfc2s_OV},
+	{0x1397, 0x08b4, 0x1397, 0xe888, 0, 0, (unsigned long)&hfc4s_OV},
+	{0x1397, 0x16b8, 0x1397, 0xe998, 0, 0, (unsigned long)&hfc8s_OV},
+	{0x1397, 0x08b4, 0x1397, 0xb566, 0, 0, (unsigned long)&hfc2s_BN},
+	{0x1397, 0x08b4, 0x1397, 0xb761, 0, 0, (unsigned long)&hfc2s_BN},
+	{0x1397, 0x08b4, 0x1397, 0xb560, 0, 0, (unsigned long)&hfc4s_BN},
+	{0x1397, 0x08b4, 0x1397, 0xb550, 0, 0, (unsigned long)&hfc4s_BN},
+	{0x1397, 0x08b4, 0x1397, 0xb762, 0, 0, (unsigned long)&hfc4s_BN},
+	{0x1397, 0x16b8, 0x1397, 0xb562, 0, 0, (unsigned long)&hfc8s_BN},
+	{0x1397, 0x16b8, 0x1397, 0xb56b, 0, 0, (unsigned long)&hfc8s_BN},
+	{0x1397, 0x08b4, 0x1397, 0xb540, 0, 0, (unsigned long)&hfc4s_SW},
+	{0x1397, 0x08b4, 0x1397, 0x08b4, 0, 0, (unsigned long)&hfc4s_EV},
 	{0, }
 
 };
