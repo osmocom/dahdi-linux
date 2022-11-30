@@ -656,7 +656,12 @@ wctc4xxp_net_register(struct wcdte *wc)
 	netdev->promiscuity = 0;
 	netdev->flags |= IFF_NOARP;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	/* 64 is NAPI_POLL_WEIGHT, i.e. the default */
+	netif_napi_add(netdev, &wc->napi, &wctc4xxp_poll);
+#else
 	netif_napi_add(netdev, &wc->napi, &wctc4xxp_poll, 64);
+#endif
 
 	res = register_netdev(netdev);
 	if (res) {
