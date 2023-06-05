@@ -1551,7 +1551,13 @@ static inline int dahdi_ktime_equal(const ktime_t cmp1, const ktime_t cmp2)
 #define DEFINE_SPINLOCK(x)      spinlock_t x = SPIN_LOCK_UNLOCKED
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 #ifndef DEFINE_SEMAPHORE
+#define DEFINE_SEMAPHORE(name) \
+	struct semaphore name = __SEMAPHORE_INITIALIZER(name, 1)
+#endif
+#else /* 6.4.0, speficcally 48380368dec14859723b9e3fbd43e042638d9a76 */
+#undef DEFINE_SEMAPHORE
 #define DEFINE_SEMAPHORE(name) \
 	struct semaphore name = __SEMAPHORE_INITIALIZER(name, 1)
 #endif
