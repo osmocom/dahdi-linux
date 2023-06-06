@@ -47,7 +47,7 @@ static int span_match(struct device *dev, struct device_driver *driver)
 	return 1;
 }
 
-static inline struct dahdi_span *dev_to_span(struct device *dev)
+static inline struct dahdi_span *dev_to_span(const struct device *dev)
 {
 	return dev_get_drvdata(dev);
 }
@@ -68,7 +68,7 @@ static inline struct dahdi_span *dev_to_span(struct device *dev)
 			return err;				\
 	} while (0)
 
-static int span_uevent(struct device *dev, struct kobj_uevent_env *kenv)
+static int span_uevent(UEVENT_CONST struct device *dev, struct kobj_uevent_env *kenv)
 {
 	struct dahdi_span *span;
 
@@ -415,7 +415,7 @@ static struct {
 	unsigned int clean_chardev:1;
 } should_cleanup;
 
-static inline struct dahdi_device *to_ddev(struct device *dev)
+static inline const struct dahdi_device *to_ddev(const struct device *dev)
 {
 	return container_of(dev, struct dahdi_device, dev);
 }
@@ -438,9 +438,9 @@ static inline struct dahdi_device *to_ddev(struct device *dev)
 			return err;				\
 	} while (0)
 
-static int device_uevent(struct device *dev, struct kobj_uevent_env *kenv)
+static int device_uevent(UEVENT_CONST struct device *dev, struct kobj_uevent_env *kenv)
 {
-	struct dahdi_device *ddev;
+	const struct dahdi_device *ddev;
 
 	if (!dev)
 		return -ENODEV;
@@ -456,7 +456,7 @@ static ssize_t
 manufacturer_show(struct device *dev,
 			       struct device_attribute *attr, char *buf)
 {
-	struct dahdi_device *ddev = to_ddev(dev);
+	const struct dahdi_device *ddev = to_ddev(dev);
 	return sprintf(buf, "%s\n", ddev->manufacturer);
 }
 
@@ -464,7 +464,7 @@ static ssize_t
 type_show(struct device *dev,
 		       struct device_attribute *attr, char *buf)
 {
-	struct dahdi_device *ddev = to_ddev(dev);
+	const struct dahdi_device *ddev = to_ddev(dev);
 	return sprintf(buf, "%s\n", ddev->devicetype);
 }
 
@@ -472,7 +472,7 @@ static ssize_t
 span_count_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
-	struct dahdi_device *ddev = to_ddev(dev);
+	const struct dahdi_device *ddev = to_ddev(dev);
 	unsigned int count = 0;
 	struct list_head *pos;
 
@@ -486,7 +486,7 @@ static ssize_t
 hardware_id_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
-	struct dahdi_device *ddev = to_ddev(dev);
+	const struct dahdi_device *ddev = to_ddev(dev);
 
 	return sprintf(buf, "%s\n",
 		(ddev->hardware_id) ? ddev->hardware_id : "");
@@ -496,7 +496,7 @@ static ssize_t
 location_show(struct device *dev,
 			     struct device_attribute *attr, char *buf)
 {
-	struct dahdi_device *ddev = to_ddev(dev);
+	const struct dahdi_device *ddev = to_ddev(dev);
 
 	return sprintf(buf, "%s\n",
 		(ddev->location) ? ddev->location : "");
@@ -506,7 +506,7 @@ static ssize_t
 auto_assign_store(struct device *dev, struct device_attribute *attr,
 			 const char *buf, size_t count)
 {
-	struct dahdi_device *ddev = to_ddev(dev);
+	struct dahdi_device *ddev = (struct dahdi_device *) to_ddev(dev);
 	dahdi_assign_device_spans(ddev);
 	return count;
 }
@@ -520,7 +520,7 @@ assign_span_store(struct device *dev, struct device_attribute *attr,
 	unsigned int local_span_number;
 	unsigned int desired_spanno;
 	unsigned int desired_basechanno;
-	struct dahdi_device *const ddev = to_ddev(dev);
+	struct dahdi_device *const ddev = (struct dahdi_device *const) to_ddev(dev);
 
 	ret = sscanf(buf, "%u:%u:%u", &local_span_number, &desired_spanno,
 		     &desired_basechanno);
@@ -553,7 +553,7 @@ unassign_span_store(struct device *dev, struct device_attribute *attr,
 	int ret;
 	unsigned int local_span_number;
 	struct dahdi_span *span;
-	struct dahdi_device *const ddev = to_ddev(dev);
+	struct dahdi_device *const ddev = (struct dahdi_device *const) to_ddev(dev);
 
 	ret = sscanf(buf, "%u", &local_span_number);
 	if (ret != 1)
@@ -578,7 +578,7 @@ static ssize_t
 dahdi_spantype_show(struct device *dev,
 		    struct device_attribute *attr, char *buf)
 {
-	struct dahdi_device *ddev = to_ddev(dev);
+	const struct dahdi_device *ddev = to_ddev(dev);
 	int count = 0;
 	ssize_t total = 0;
 	struct dahdi_span *span;
@@ -598,7 +598,7 @@ static ssize_t
 dahdi_spantype_store(struct device *dev, struct device_attribute *attr,
 		     const char *buf, size_t count)
 {
-	struct dahdi_device *const ddev = to_ddev(dev);
+	struct dahdi_device *const ddev = (struct dahdi_device *const) to_ddev(dev);
 	int ret;
 	struct dahdi_span *span = NULL;
 	struct dahdi_span *cur;
@@ -652,7 +652,7 @@ static ssize_t
 dahdi_registration_time_show(struct device *dev,
 		    struct device_attribute *attr, char *buf)
 {
-	struct dahdi_device *ddev = to_ddev(dev);
+	const struct dahdi_device *ddev = to_ddev(dev);
 	int count = 0;
 	struct timespec64 ts = ktime_to_timespec64(ddev->registration_time);
 

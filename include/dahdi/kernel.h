@@ -1683,4 +1683,13 @@ struct mutex {
 
 #endif /* DAHDI_PRINK_MACROS_USE_debug */
 
+
+/* work-around kernel API change from "struct device *dev" to "const struct device *dev"
+ * as implemented in 2a81ada32f0e584fc0c943e0d3a8c9f4fae411d6 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#define UEVENT_CONST const
+#else
+#define UEVENT_CONST
+#endif
+
 #endif /* _DAHDI_KERNEL_H */
