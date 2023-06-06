@@ -483,7 +483,12 @@ int __init dahdi_sysfs_chan_init(const struct file_operations *fops)
 	}
 	should_cleanup.channel_driver = 1;
 
+/* see linux kernel commit 1aaba11da9aa7d7d6b52a74d45b31cac118295a1 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	dahdi_class = class_create("dahdi");
+#else
 	dahdi_class = class_create(THIS_MODULE, "dahdi");
+#endif
 	if (IS_ERR(dahdi_class)) {
 		res = PTR_ERR(dahdi_class);
 		dahdi_err("%s: class_create(dahi_chan) failed. Error: %d\n",
