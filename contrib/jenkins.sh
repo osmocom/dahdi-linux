@@ -30,11 +30,11 @@ git log -1 --pretty="%t - %s"
 
 make -j "$JOBS" modules_prepare
 
-# XPP_LOCAL_CFLAGS: OS#6098
+# KCFLAGS: OS#6098
 make \
 	-j "$JOBS" \
 	-C "$TOPDIR" \
 	KSRC="$KSRC" \
 	KBUILD_MODPOST_WARN=1 \
-	XPP_LOCAL_CFLAGS="-Wno-error" \
+	KCFLAGS="-Wno-error=address" \
 	V=1
