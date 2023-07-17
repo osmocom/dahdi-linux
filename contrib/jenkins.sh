@@ -36,4 +36,5 @@ make \
 	-C "$TOPDIR" \
 	KSRC="$KSRC" \
 	KBUILD_MODPOST_WARN=1 \
-	XPP_LOCAL_CFLAGS="-Wno-error"
+	XPP_LOCAL_CFLAGS="-Wno-error" \
+	V=1
