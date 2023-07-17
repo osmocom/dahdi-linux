@@ -29,4 +29,11 @@ fi
 git log -1 --pretty="%t - %s"
 
 make -j "$JOBS" modules_prepare
-make -j "$JOBS" -C "$TOPDIR" KSRC="$KSRC" KBUILD_MODPOST_WARN=1
+
+# Wno-error=address: OS#6098
+make \
+	-j "$JOBS" \
+	-C "$TOPDIR" \
+	KSRC="$KSRC" \
+	KBUILD_MODPOST_WARN=1 \
+	KCFLAGS="-Wno-error=address"
