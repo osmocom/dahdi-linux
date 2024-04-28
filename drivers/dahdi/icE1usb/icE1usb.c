@@ -686,7 +686,7 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 	}
 
 	if (span->lineconfig & DAHDI_CONFIG_CRC4)
-		ieu->cfg.tx.mode = ICE1USB_TX_MODE_TS0_CRC4;
+		ieu->cfg.tx.mode = ICE1USB_TX_MODE_TS0_CRC4_E;
 	else
 		ieu->cfg.tx.mode = ICE1USB_TX_MODE_TS0;
 
