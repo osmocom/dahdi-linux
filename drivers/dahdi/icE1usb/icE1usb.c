@@ -108,6 +108,7 @@ struct ice1usb {
 	} ep;
 	struct {
 		struct ice1usb_tx_config tx;
+		struct ice1usb_rx_config rx;
 	} cfg;
 	/* last received error interrupt */
 	struct ice1usb_irq_err last_err;
@@ -220,10 +221,23 @@ static const char *tx_ext_loopback_str(enum ice1usb_tx_ext_loopback ext_lb)
 	}
 }
 
+static const char *rx_mode_str(enum ice1usb_rx_mode rx_mode)
+{
+	switch (rx_mode) {
+	case ICE1USB_RX_MODE_FRAME:
+		return "FRAME";
+	case ICE1USB_RX_MODE_MULTIFRAME:
+		return "MULTIFRAME";
+	default:
+		return "unknown";
+	}
+}
+
+
 #define USB_RT_VEND_IF (USB_TYPE_VENDOR | USB_RECIP_INTERFACE)
 #define USB_RT_VEND_DEV (USB_TYPE_VENDOR | USB_RECIP_DEVICE)
 
-/* synchronous request, may block up to 1s, only called from process context! */
+/* synchronous requests, may block up to 1s, only called from process context! */
 static int ice1usb_tx_config(struct ice1usb *ieu)
 {
 	int rc;
@@ -240,6 +254,25 @@ static int ice1usb_tx_config(struct ice1usb *ieu)
 	if (rc < 0)
 		return rc;
 	if (rc != sizeof(ieu->cfg.tx))
+		return -EIO;
+	return 0;
+}
+
+static int ice1usb_rx_config(struct ice1usb *ieu)
+{
+	int rc;
+	uint8_t if_num = ieu->usb_intf->cur_altsetting->desc.bInterfaceNumber;
+
+	ieu_info(ieu, "RX-CONFIG (mode=%s)\n",
+		 rx_mode_str(ieu->cfg.rx.mode));
+
+	rc = usb_control_msg(ieu->usb_dev, usb_sndctrlpipe(ieu->usb_dev, 0),
+				ICE1USB_INTF_SET_RX_CFG, USB_RT_VEND_IF,
+				0, if_num, &ieu->cfg.rx, sizeof(ieu->cfg.rx),
+				USB_CTRL_SET_TIMEOUT);
+	if (rc < 0)
+		return rc;
+	if (rc != sizeof(ieu->cfg.rx))
 		return -EIO;
 	return 0;
 }
@@ -685,10 +718,13 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 		lc->sync = 0;
 	}
 
-	if (span->lineconfig & DAHDI_CONFIG_CRC4)
+	if (span->lineconfig & DAHDI_CONFIG_CRC4) {
 		ieu->cfg.tx.mode = ICE1USB_TX_MODE_TS0_CRC4_E;
-	else
+		ieu->cfg.rx.mode = ICE1USB_RX_MODE_MULTIFRAME;
+	} else {
 		ieu->cfg.tx.mode = ICE1USB_TX_MODE_TS0;
+		ieu->cfg.rx.mode = ICE1USB_RX_MODE_FRAME;
+	}
 
 	if (lc->sync > 0)
 		ieu->cfg.tx.timing = ICE1USB_TX_TIME_SRC_REMOTE;
@@ -713,9 +749,16 @@ static int e1u_d_spanconfig(struct file *file, struct dahdi_span *span,
 		rc = ice1usb_tx_config(ieu);
 		if (rc < 0)
 			return rc;
+		rc = ice1usb_rx_config(ieu);
+		if (rc < 0)
+			return rc;
 		rc = e1u_d_startup(file, span);
-	} else
+	} else {
 		rc = ice1usb_tx_config(ieu);
+		if (rc < 0)
+			return rc;
+		rc = ice1usb_rx_config(ieu);
+	}
 
 	return rc;
 }
