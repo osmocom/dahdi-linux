@@ -591,7 +591,7 @@ static void ice1usb_update_counters(struct ice1usb *ieu, const struct ice1usb_ir
 	memcpy(&ieu->last_err, err, sizeof(ieu->last_err));
 }
 
-#define ALL_RY_ALARMS (DAHDI_ALARM_RED | DAHDI_ALARM_YELLOW | \
+#define ALL_RY_ALARMS (DAHDI_ALARM_RED | DAHDI_ALARM_YELLOW | DAHDI_ALARM_BLUE | \
 		       DAHDI_ALARM_LFA | DAHDI_ALARM_LMFA | DAHDI_ALARM_LOS)
 
 /* interrupt EP completes: Process and resubmit */
@@ -621,6 +621,8 @@ static void ice1usb_irq_complete(struct urb *urb)
 				alarms |= DAHDI_ALARM_RED | DAHDI_ALARM_LFA | DAHDI_ALARM_LMFA;
 			if (err->flags & ICE1USB_ERR_F_RAI)
 				alarms |= DAHDI_ALARM_YELLOW;
+			if (err->flags & ICE1USB_ERR_F_AIS)
+				alarms |= DAHDI_ALARM_BLUE;
 			ieu->dahdi.span.alarms &= ~ALL_RY_ALARMS;
 			ieu->dahdi.span.alarms |= alarms;
 			dahdi_alarm_notify(&ieu->dahdi.span);
