@@ -592,7 +592,7 @@ static void ice1usb_update_counters(struct ice1usb *ieu, const struct ice1usb_ir
 }
 
 #define ALL_RY_ALARMS (DAHDI_ALARM_RED | DAHDI_ALARM_YELLOW | \
-		       DAHDI_ALARM_LFA | DAHDI_ALARM_LMFA | ICE1USB_ERR_F_LOS)
+		       DAHDI_ALARM_LFA | DAHDI_ALARM_LMFA | DAHDI_ALARM_LOS)
 
 /* interrupt EP completes: Process and resubmit */
 static void ice1usb_irq_complete(struct urb *urb)
