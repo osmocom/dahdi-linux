@@ -1119,6 +1119,18 @@ static ssize_t e1u_gpsdo_freq_est_show(struct device *dev,
 
 static DEVICE_ATTR(gpsdo_freq_est, 0444, e1u_gpsdo_freq_est_show, NULL);
 
+static ssize_t e1u_gpsdo_err_acc_show(struct device *dev,
+					struct device_attribute *attr, char *buf)
+{
+	struct ice1usb_gpsdo *e1d = dev_get_drvdata(dev);
+	int rc = e1u_update_gpsdo(e1d);
+	if (rc < 0)
+		return rc;
+	return sprintf(buf, "%d\n", (int)e1d->gpsdo_status.err_acc);
+}
+
+static DEVICE_ATTR(gpsdo_err_acc, 0444, e1u_gpsdo_err_acc_show, NULL);
+
 static ssize_t e1u_fw_build_show(struct device *dev,
 				 struct device_attribute *attr, char *buf)
 {
@@ -1138,6 +1150,7 @@ static void create_sysfs_files(struct ice1usb_gpsdo *e1d)
 	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_tune_coarse);
 	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_tune_fine);
 	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_freq_est);
+	device_create_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_err_acc);
 	device_create_file(&e1d->usb_intf->dev, &dev_attr_fw_build);
 }
 
@@ -1150,6 +1163,7 @@ static void remove_sysfs_files(struct ice1usb_gpsdo *e1d)
 	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_tune_coarse);
 	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_tune_fine);
 	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_freq_est);
+	device_remove_file(&e1d->usb_intf->dev, &dev_attr_gpsdo_err_acc);
 	device_remove_file(&e1d->usb_intf->dev, &dev_attr_fw_build);
 }
 
