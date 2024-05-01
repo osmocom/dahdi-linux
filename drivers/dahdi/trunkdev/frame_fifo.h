@@ -56,3 +56,6 @@ int frame_fifo_out(struct frame_fifo *fifo, uint8_t *out);
 
 /* pull multiple frames out of the FIFO */
 int frame_fifo_out_multi(struct frame_fifo *fifo, uint8_t *out, size_t count);
+
+/* dump FIFO state to kernel log */
+void fifo_dump(struct frame_fifo *fifo);
