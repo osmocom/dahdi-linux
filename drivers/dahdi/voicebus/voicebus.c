@@ -1794,11 +1794,6 @@ __voicebus_init(struct voicebus *vb, const char *board_name,
 		goto cleanup;
 	}
 
-	if (0 == (pci_resource_flags(vb->pdev, 0)&IORESOURCE_IO)) {
-		dev_err(&vb->pdev->dev, "BAR0 is not IO Memory.\n");
-		retval = -EIO;
-		goto cleanup;
-	}
 	vb->iobase = pci_iomap(vb->pdev, 1, 0);
 	if (request_mem_region(pci_resource_start(vb->pdev, 1),
 			       pci_resource_len(vb->pdev, 1),
