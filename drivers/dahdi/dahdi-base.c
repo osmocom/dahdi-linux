@@ -3995,8 +3995,6 @@ static void __dahdi_find_master_span(void)
 			continue;
 		if (!can_provide_timing(s))
 			continue;
-		if (master_span == s)
-			continue;
 
 		master_span = s;
 		break;
