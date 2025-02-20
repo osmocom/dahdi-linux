@@ -146,6 +146,12 @@ ifneq ($(DAHDI_ARCH),)
   endif
 endif
 
+# FIXME: This workaround should not be necessary, but for some reason the rule
+# '$(obj)/%: $(src)/%_shipped' from linux.git scripts/Makefile.lib doesn't
+# cover this anymore.
+vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o: $(src)/vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o_shipped
+	$(call cmd,copy)
+
 ###############################################################################
 # HPEC Support 
 ###############################################################################
