@@ -2701,8 +2701,7 @@ static int __devinit te13xp_init_one(struct pci_dev *pdev,
 	return 0;
 
 fail_exit:
-	if (&wc->xb)
-		wcxb_release(&wc->xb);
+	wcxb_release(&wc->xb);
 
 	free_wc(wc);
 	return res;

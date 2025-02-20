@@ -952,12 +952,8 @@ static int dahdi_seq_show(struct seq_file *sfile, void *data)
 	if (!s)
 		return -ENODEV;
 
-	if (s->name)
-		seq_printf(sfile, "Span %d: %s ", s->spanno, s->name);
-	if (s->desc)
-		seq_printf(sfile, "\"%s\"", s->desc);
-	else
-		seq_printf(sfile, "\"\"");
+	seq_printf(sfile, "Span %d: %s ", s->spanno, s->name);
+	seq_printf(sfile, "\"%s\"", s->desc);
 
 	if (dahdi_is_sync_master(s))
 		seq_printf(sfile, " (MASTER)");
@@ -993,9 +989,7 @@ static int dahdi_seq_show(struct seq_file *sfile, void *data)
 	for (x = 0; x < s->channels; x++) {
 		struct dahdi_chan *chan = s->chans[x];
 
-		if (chan->name)
-			seq_printf(sfile, "\t%4d %s ", chan->channo,
-					chan->name);
+		seq_printf(sfile, "\t%4d %s ", chan->channo, chan->name);
 
 		if (chan->sig) {
 			if (chan->sig == DAHDI_SIG_SLAVE)

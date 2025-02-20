@@ -113,7 +113,7 @@ int xbus_check_unique(xbus_t *xbus)
 {
 	if (!xbus)
 		return -ENOENT;
-	if (xbus->label && *(xbus->label)) {
+	if (xbus->label[0]) {
 		xbus_t *xbus_old;
 
 		XBUS_DBG(DEVICES, xbus, "Checking LABEL='%s'\n", xbus->label);

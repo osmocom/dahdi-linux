@@ -3514,8 +3514,7 @@ static int __devinit t43x_init_one(struct pci_dev *pdev,
 	return 0;
 
 fail_exit:
-	if (&wc->xb)
-		wcxb_release(&wc->xb);
+	wcxb_release(&wc->xb);
 
 	if (debug)
 		dev_info(&wc->xb.pdev->dev, "***At fail_exit in init_one***\n");
