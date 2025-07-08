@@ -77,6 +77,11 @@
 #define PDE_DATA(i)	pde_data(i)
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+#define del_timer timer_delete
+#define del_timer_sync timer_delete_sync
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
 #include <linux/dma-mapping.h>
 static inline void *
