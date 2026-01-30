@@ -5449,7 +5449,7 @@ static int dahdi_ioctl_get_version(unsigned long data)
 			 */
 			 continue;
 		}
-		strncat(vi.echo_canceller, ec_name, space);
+		strncpy(vi.echo_canceller, ec_name, space);
 		space -= strlen(ec_name);
 		if (space < 1)
 			break;
