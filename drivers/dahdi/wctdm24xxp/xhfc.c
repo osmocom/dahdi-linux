@@ -2554,7 +2554,7 @@ void wctdm_hdlc_hard_xmit(struct dahdi_chan *chan)
 
 static int b400m_probe(struct wctdm *wc, int modpos)
 {
-	unsigned char id, x;
+	unsigned char id, x = 0;
 	struct b400m *b4;
 	unsigned long flags;
 	int chiprev;
