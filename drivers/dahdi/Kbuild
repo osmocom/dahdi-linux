@@ -135,40 +135,40 @@ endif
 # VPMADT032 Loader
 ###############################################################################
 
-dahdi_vpmadt032_loader-objs := vpmadt032_loader/dahdi_vpmadt032_loader.o 
-
-ifneq ($(DAHDI_ARCH),)
-  ifneq ($(wildcard $(src)/vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o_shipped),)
-    $(shell touch $(KBUILD_EXTMOD)/vpmadt032_loader/.vpmadt032_$(DAHDI_ARCH).o.cmd)
-    VPMADT032_LOADER_PRESENT=yes
-    dahdi_vpmadt032_loader-objs += vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o
-    obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_VPMADT032_LOADER)	+= dahdi_vpmadt032_loader.o
-  endif
-endif
-
-# FIXME: This workaround should not be necessary, but for some reason the rule
-# '$(obj)/%: $(src)/%_shipped' from linux.git scripts/Makefile.lib doesn't
-# cover this anymore.
-vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o: $(src)/vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o_shipped
-	$(call cmd,copy)
-
+#dahdi_vpmadt032_loader-objs := vpmadt032_loader/dahdi_vpmadt032_loader.o 
+#
+#ifneq ($(DAHDI_ARCH),)
+#  ifneq ($(wildcard $(src)/vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o_shipped),)
+#    $(shell touch $(KBUILD_EXTMOD)/vpmadt032_loader/.vpmadt032_$(DAHDI_ARCH).o.cmd)
+#    VPMADT032_LOADER_PRESENT=yes
+#    dahdi_vpmadt032_loader-objs += vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o
+#    obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_VPMADT032_LOADER)	+= dahdi_vpmadt032_loader.o
+#  endif
+#endif
+#
+## FIXME: This workaround should not be necessary, but for some reason the rule
+## '$(obj)/%: $(src)/%_shipped' from linux.git scripts/Makefile.lib doesn't
+## cover this anymore.
+#vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o: $(src)/vpmadt032_loader/vpmadt032_$(DAHDI_ARCH).o_shipped
+#	$(call cmd,copy)
+#
 ###############################################################################
 # HPEC Support 
 ###############################################################################
-
-dahdi_echocan_hpec-objs := hpec/dahdi_echocan_hpec.o
-CFLAGS_dahdi_echocan_hpec.o := -I$(src)/hpec
-
-ifneq ($(DAHDI_ARCH),)
-  ifneq ($(wildcard $(src)/hpec/hpec_$(DAHDI_ARCH).o_shipped),)
-    HPEC_PRESENT=yes
-    dahdi_echocan_hpec-objs += hpec/hpec_$(DAHDI_ARCH).o
-  endif
-endif
-
-ifeq ($(HPEC_PRESENT),yes)
-obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_ECHOCAN_HPEC)	+= dahdi_echocan_hpec.o
-endif
+#
+#dahdi_echocan_hpec-objs := hpec/dahdi_echocan_hpec.o
+#CFLAGS_dahdi_echocan_hpec.o := -I$(src)/hpec
+#
+#ifneq ($(DAHDI_ARCH),)
+#  ifneq ($(wildcard $(src)/hpec/hpec_$(DAHDI_ARCH).o_shipped),)
+#    HPEC_PRESENT=yes
+#    dahdi_echocan_hpec-objs += hpec/hpec_$(DAHDI_ARCH).o
+#  endif
+#endif
+#
+#ifeq ($(HPEC_PRESENT),yes)
+#obj-$(DAHDI_BUILD_ALL)$(CONFIG_DAHDI_ECHOCAN_HPEC)	+= dahdi_echocan_hpec.o
+#endif
 
 
 hostprogs-y := makefw
