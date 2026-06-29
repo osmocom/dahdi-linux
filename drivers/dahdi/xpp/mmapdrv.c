@@ -572,8 +572,8 @@ static int __init xpp_mmap_init(void)
 		ret = -ENOMEM;
 		goto fail_xbus;
 	}
-	strncpy(global_xbus->connector, "mmap", XBUS_DESCLEN);
-	strncpy(global_xbus->label, "mmap:0", LABEL_SIZE);
+	strscpy(global_xbus->connector, "mmap", sizeof(global_xbus->connector));
+	strscpy(global_xbus->label, "mmap:0", sizeof(global_xbus->label));
 
 	xframe_queue_init(&txpool, 10, 200, "mmap_txpool", global_xbus);
 	if (!
