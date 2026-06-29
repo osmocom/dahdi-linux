@@ -6394,7 +6394,11 @@ static void do_ppp_calls(unsigned long data)
 		ppp_input(chan->ppp, skb);
 	if (chan->do_ppp_error) {
 		chan->do_ppp_error = 0;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 1, 0)
 		ppp_input_error(chan->ppp, 0);
+#else
+		ppp_input_error(chan->ppp);
+#endif
 	}
 }
 #endif
