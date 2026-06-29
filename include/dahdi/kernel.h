@@ -1722,4 +1722,9 @@ struct mutex {
 #define UEVENT_CONST
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
+#include <linux/string.h>
+#define strncpy		strscpy
+#endif
+
 #endif /* _DAHDI_KERNEL_H */
