@@ -40,7 +40,7 @@ int register_mmap_device(struct mmap_device *dev)
 	dev->dev.bus = &mmap_bus_type;
 	dev->dev.parent = &mmap_bus;
 	dev->dev.release = mmap_dev_release;
-	strscpy(dev->dev.bus_id, dev->name, sizeof(dev->dev.bus_id));
+	strncpy(dev->dev.bus_id, dev->name, BUS_ID_SIZE);
 	return device_register(&dev->dev);
 }
 EXPORT_SYMBOL(register_mmap_device);
