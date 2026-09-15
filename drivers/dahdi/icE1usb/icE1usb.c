@@ -29,6 +29,7 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/spinlock.h>
+#include <linux/workqueue.h>
 #include <linux/pm_runtime.h>
 
 #include <dahdi/kernel.h>
@@ -135,6 +136,8 @@ struct ice1usb {
 	} dahdi;
 	/* is the device still present (true) or already absent/unplugged (false) */
 	bool present;
+	/* deferred ice1usb_tx_config(), scheduled from the atomic .maint callback */
+	struct work_struct tx_config_work;
 	/* spinlock protecting concurrent access to fc, {read,write}chunk_idx, ... */
 	spinlock_t lock;
 	/* maximum number of 32-byte E1 frames to send in one ISO OUT packet */
@@ -880,11 +883,26 @@ static int e1u_d_shutdown(struct dahdi_span *span)
 	return 0;
 }
 
-/* set some maintenance mode according to 'cmd' */
+static void ice1usb_deferred_tx_config(struct work_struct *work)
+{
+	struct ice1usb *ieu = container_of(work, struct ice1usb, tx_config_work);
+	int rc;
+
+	if (!ieu->present)
+		return;
+
+	rc = ice1usb_tx_config(ieu);
+	if (rc < 0)
+		ieu_err(ieu, "Failed to apply maint TX config: %d\n", rc);
+}
+
+/* set some maintenance mode according to 'cmd'
+ *
+ * Called by the DAHDI core with span->lock held and IRQs disabled, so the
+ * blocking USB I/O is deferred to ice1usb_deferred_tx_config(). */
 static int e1u_d_maint(struct dahdi_span *span, int cmd)
 {
 	struct ice1usb *ieu = container_of(span, struct ice1usb, dahdi.span);
-	int rc = 0;
 
 	ieu_dbg(ieu, "entering %s(%d)", __FUNCTION__, cmd);
 
@@ -892,12 +910,12 @@ static int e1u_d_maint(struct dahdi_span *span, int cmd)
 	case DAHDI_MAINT_NONE:
 		ieu_info(ieu, "Clearing all maint modes\n");
 		ieu->cfg.tx.ext_loopback = ICE1USB_TX_EXT_LOOPBACK_OFF;
-		rc = ice1usb_tx_config(ieu);
+		schedule_work(&ieu->tx_config_work);
 		break;
 	case DAHDI_MAINT_NETWORKLINELOOP:
 		ieu_info(ieu, "Turning on network line loopback\n");
 		ieu->cfg.tx.ext_loopback = ICE1USB_TX_EXT_LOOPBACK_SAME;
-		rc = ice1usb_tx_config(ieu);
+		schedule_work(&ieu->tx_config_work);
 		break;
 	/* TODO: DAHDI_MAINT_*_DEFECT */
 	/* TODO: DAHDI_MAINT_ALARM_SIM */
@@ -910,7 +928,7 @@ static int e1u_d_maint(struct dahdi_span *span, int cmd)
 		return -ENOSYS;
 	}
 
-	return rc;
+	return 0;
 }
 
 static const struct dahdi_span_ops ice1usb_span_ops = {
@@ -1413,6 +1431,7 @@ static int ice1usb_probe(struct usb_interface *intf, const struct usb_device_id 
 	ieu->fc.r_sw = 8192;
 	ieu->present = true;
 	spin_lock_init(&ieu->lock);
+	INIT_WORK(&ieu->tx_config_work, ice1usb_deferred_tx_config);
 
 	/* locate ON / OFF altsettings */
 	ieu->alt_off = find_altsetting_off(ieu->usb_intf);
@@ -1513,6 +1532,8 @@ static void ice1usb_disconnect(struct usb_interface *intf)
 
 	/* will in turn call e1u_d_shutdown() which stops all transfers */
 	dahdi_unregister_device(ieu->dahdi.dev);
+
+	cancel_work_sync(&ieu->tx_config_work);
 
 	ice1usb_free(ieu);
 }
